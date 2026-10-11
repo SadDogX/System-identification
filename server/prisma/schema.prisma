@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum NotificationKind {
+  EXPIRY
+  MESSAGE
+  DIGEST
+}
+
+model User {
+  id                 Int      @id @default(autoincrement())
+  fullName           String   @db.VarChar(200)
+  // Логин остаётся занятым и после мягкого удаления пользователя
+  login              String   @unique @db.VarChar(50)
+  passwordHash       String   @db.VarChar(100)
+  role               Role     @default(USER)
+  position           String?  @db.VarChar(150)
+  phone              String?  @db.VarChar(50)
+  email              String?  @db.VarChar(150)
+  isActive           Boolean  @default(true)
+  isDeleted          Boolean  @default(false)
+  mustChangePassword Boolean  @default(true)
+  // Увеличивается при блокировке, смене роли или пароля — старые токены перестают работать
+  tokenVersion       Int      @default(0)
+  uiSettings         Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  credentials        UserCredential[] @relation("CredentialOwner")
+  updatedCredentials UserCredential[] @relation("CredentialEditor")
+  notifications      Notification[]
+  sentMessages       Message[]
+  auditAsActor       AuditLog[]       @relation("AuditActor")
+  auditAsTarget      AuditLog[]       @relation("AuditTarget")
+
+  @@index([role, isDeleted])
+}
+
+/// Справочник удостоверений: название и срок действия
+model Credential {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(200)
+  validityMonths Int
+  sortOrder      Int      @default(0)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  userCredentials UserCredential[]
+}
+
+/// Конкретное удостоверение конкретного сотрудника
+model UserCredential {
+  id                  Int       @id @default(autoincrement())
+  userId              Int
+  credentialId        Int
+  number              String?   @db.VarChar(100)
+  issueDate           DateTime? @db.Date
+  // Вычисляется сервером: дата выдачи + срок из справочника на момент ввода
+  expiryDate          DateTime? @db.Date
+  comment             String?   @db.Text
+  isMarkedForDeletion Boolean   @default(false)
+  updatedById         Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user       User       @relation("CredentialOwner", fields: [userId], references: [id])
+  credential Credential @relation(fields: [credentialId], references: [id])
+  updatedBy  User?      @relation("CredentialEditor", fields: [updatedById], references: [id])
+
+  @@unique([userId, credentialId])
+  @@index([expiryDate])
+}
+
+/// Уведомления и входящие сообщения. Для сообщения строка = получатель
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  kind      NotificationKind
+  level     String?          @db.VarChar(10)
+  title     String           @db.VarChar(300)
+  body      String           @db.Text
+  link      String?          @db.VarChar(300)
+  messageId Int?
+  // Защита от дублей автоуведомлений
+  dedupKey  String?          @unique @db.VarChar(191)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  message Message? @relation(fields: [messageId], references: [id])
+
+  @@index([userId, readAt])
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  senderId    Int
+  subject     String   @db.VarChar(200)
+  body        String   @db.Text
+  isBroadcast Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  sender     User           @relation(fields: [senderId], references: [id])
+  deliveries Notification[]
+}
+
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  actorId      Int?
+  action       String   @db.VarChar(50)
+  entityType   String   @db.VarChar(50)
+  entityId     Int?
+  targetUserId Int?
+  diff         Json?
+  createdAt    DateTime @default(now())
+
+  actor      User? @relation("AuditActor", fields: [actorId], references: [id])
+  targetUser User? @relation("AuditTarget", fields: [targetUserId], references: [id])
+
+  @@index([createdAt])
+  @@index([targetUserId])
+}
+
+model Setting {
+  key   String @id @db.VarChar(50)
+  value String @db.VarChar(200)
+}

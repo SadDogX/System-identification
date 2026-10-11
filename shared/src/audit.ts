@@ -1,0 +1,40 @@
+/** Человекочитаемые названия действий и полей для журнала. */
+
+export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  'user.create': 'Создал пользователя',
+  'user.update': 'Изменил пользователя',
+  'user.delete': 'Удалил пользователя',
+  'user.resetPassword': 'Сбросил пароль',
+  'profile.update': 'Изменил свой профиль',
+  'catalog.create': 'Добавил удостоверение в справочник',
+  'catalog.update': 'Изменил удостоверение в справочнике',
+  'catalog.archive': 'Архивировал удостоверение в справочнике',
+  'catalog.unarchive': 'Вернул удостоверение из архива',
+  'credential.update': 'Изменил удостоверение',
+  'credential.clear': 'Очистил данные удостоверения',
+  'credential.mark': 'Пометил удостоверение на удаление',
+  'credential.unmark': 'Снял пометку на удаление',
+  'message.send': 'Отправил сообщение',
+};
+
+export const AUDIT_FIELD_LABELS: Record<string, string> = {
+  fullName: 'ФИО',
+  login: 'Логин',
+  role: 'Роль',
+  position: 'Должность',
+  phone: 'Телефон',
+  email: 'Email',
+  isActive: 'Активен',
+  isDeleted: 'Удалён',
+  name: 'Название',
+  validityMonths: 'Срок действия (мес.)',
+  sortOrder: 'Порядок',
+  isArchived: 'В архиве',
+  number: 'Номер',
+  issueDate: 'Дата выдачи',
+  expiryDate: 'Действительно до',
+  comment: 'Комментарий',
+  isMarkedForDeletion: 'Помечено на удаление',
+  subject: 'Тема',
+  recipient: 'Получатель',
+};
