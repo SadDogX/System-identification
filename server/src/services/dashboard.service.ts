@@ -1,12 +1,12 @@
 import type { User } from '@prisma/client';
 import { CREDENTIAL_STATUSES, type DashboardDto } from '@app/shared';
-import { prisma } from '../db';
-import { fromDbDate } from '../utils/dates';
-import { toUserCredentialDto } from '../utils/mappers';
-import { statusWhere, visibleCredentialWhere } from './credentialFilters';
-import { getDateContext } from './settings.service';
-import { recent } from './auditLog.service';
-import { unreadCount } from './notifications.service';
+import { prisma } from '../db.ts';
+import { fromDbDate } from '../utils/dates.ts';
+import { toUserCredentialDto } from '../utils/mappers.ts';
+import { statusWhere, visibleCredentialWhere } from './credentialFilters.ts';
+import { getDateContext } from './settings.service.ts';
+import { recent } from './auditLog.service.ts';
+import { unreadCount } from './notifications.service.ts';
 
 export async function getDashboard(admin: User): Promise<DashboardDto> {
   const { settings, today } = await getDateContext();

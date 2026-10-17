@@ -1,173 +1,179 @@
-import { z } from 'zod';
-import { isIsoDate } from './dates';
-import { CREDENTIAL_STATUSES } from './status';
+import { isIsoDate } from './dates.ts';
+import { CREDENTIAL_STATUSES } from './status.ts';
+import {
+  bool,
+  int,
+  matches,
+  object,
+  oneOf,
+  optional,
+  optionalId,
+  optionalText,
+  queryBool,
+  rawText,
+  text,
+  type Infer,
+} from './validation.ts';
 
 export const ROLES = ['ADMIN', 'USER'] as const;
 export type Role = (typeof ROLES)[number];
 
-const trimmed = (max: number) => z.string().trim().max(max);
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .transform((v) => (v === '' ? null : v))
-    .nullable()
-    .optional();
+export const isoDate = matches(
+  (v): v is string => typeof v === 'string' && isIsoDate(v),
+  'Укажите корректную дату',
+);
 
-export const isoDate = z.string().refine(isIsoDate, 'Некорректная дата (ожидается ГГГГ-ММ-ДД)');
+const passwordSchema = rawText({ min: 8, max: 100, message: 'Пароль должен содержать не менее 8 символов' });
 
-export const passwordSchema = z
-  .string()
-  .min(8, 'Пароль должен содержать не менее 8 символов')
-  .max(100, 'Слишком длинный пароль');
+const loginField = text({
+  min: 3,
+  max: 50,
+  message: 'Логин должен содержать не менее 3 символов',
+  pattern: [/^[a-zA-Z0-9._-]+$/, 'Логин может содержать только латинские буквы, цифры и . _ -'],
+});
 
-export const loginSchema = z
-  .string()
-  .trim()
-  .min(3, 'Логин должен содержать не менее 3 символов')
-  .max(50)
-  .regex(/^[a-zA-Z0-9._-]+$/, 'Логин может содержать только латинские буквы, цифры и . _ -');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const optionalEmail = optionalText(150, [(v) => EMAIL_RE.test(v), 'Некорректный email']);
 
 // ---------- Авторизация ----------
 
-export const loginRequestSchema = z.object({
-  login: z.string().trim().min(1, 'Введите логин'),
-  password: z.string().min(1, 'Введите пароль'),
+export const loginRequestSchema = object({
+  login: text({ max: 50, message: 'Введите логин' }),
+  password: rawText({ min: 1, max: 100, message: 'Введите пароль' }),
 });
-export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type LoginRequest = Infer<typeof loginRequestSchema>;
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Введите текущий пароль'),
+export const changePasswordSchema = object({
+  currentPassword: rawText({ min: 1, max: 100, message: 'Введите текущий пароль' }),
   newPassword: passwordSchema,
 });
-export type ChangePasswordRequest = z.infer<typeof changePasswordSchema>;
+export type ChangePasswordRequest = Infer<typeof changePasswordSchema>;
 
 // ---------- Пользователи ----------
 
-const profileFields = {
-  position: optionalText(150),
-  phone: optionalText(50),
-  email: z
-    .string()
-    .trim()
-    .max(150)
-    .transform((v) => (v === '' ? null : v))
-    .pipe(z.string().email('Некорректный email').nullable())
-    .nullable()
-    .optional(),
-};
-
-export const createUserSchema = z.object({
-  fullName: trimmed(200).min(1, 'Укажите ФИО'),
-  login: loginSchema,
+export const createUserSchema = object({
+  fullName: text({ max: 200, message: 'Укажите ФИО' }),
+  login: loginField,
   password: passwordSchema,
-  role: z.enum(ROLES),
-  ...profileFields,
+  role: oneOf(ROLES),
+  positionId: optionalId(),
+  phone: optionalText(50),
+  email: optionalEmail,
 });
-export type CreateUserRequest = z.infer<typeof createUserSchema>;
+export type CreateUserRequest = Infer<typeof createUserSchema>;
 
-export const updateUserSchema = z.object({
-  fullName: trimmed(200).min(1, 'Укажите ФИО').optional(),
-  role: z.enum(ROLES).optional(),
-  isActive: z.boolean().optional(),
-  ...profileFields,
+export const updateUserSchema = object({
+  fullName: optional(text({ max: 200, message: 'Укажите ФИО' })),
+  role: optional(oneOf(ROLES)),
+  isActive: optional(bool()),
+  positionId: optionalId(),
+  phone: optionalText(50),
+  email: optionalEmail,
 });
-export type UpdateUserRequest = z.infer<typeof updateUserSchema>;
+export type UpdateUserRequest = Infer<typeof updateUserSchema>;
 
-export const resetPasswordSchema = z.object({ password: passwordSchema });
+export const resetPasswordSchema = object({ password: passwordSchema });
 
 /** Поля профиля, которые пользователь может менять сам. */
-export const updateProfileSchema = z.object({
-  phone: profileFields.phone,
-  email: profileFields.email,
+export const updateProfileSchema = object({
+  phone: optionalText(50),
+  email: optionalEmail,
 });
-export type UpdateProfileRequest = z.infer<typeof updateProfileSchema>;
+export type UpdateProfileRequest = Infer<typeof updateProfileSchema>;
 
 export const VIEW_MODES = ['table', 'cards'] as const;
 export type ViewMode = (typeof VIEW_MODES)[number];
 
-export const uiSettingsSchema = z.object({
-  credentialsView: z.enum(VIEW_MODES).optional(),
+export const uiSettingsSchema = object({
+  credentialsView: optional(oneOf(VIEW_MODES)),
 });
-export type UiSettings = z.infer<typeof uiSettingsSchema>;
+export type UiSettings = Infer<typeof uiSettingsSchema>;
 
 export const USER_LIST_FILTERS = ['all', 'USER', 'ADMIN', 'hasRed', 'hasYellow', 'hasWhite'] as const;
 
-export const userListQuerySchema = z.object({
-  q: z.string().trim().optional(),
-  filter: z.enum(USER_LIST_FILTERS).default('all'),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+const page = int({ min: 1, default: 1 });
+const pageSize = (def: number, max: number) => int({ min: 1, max, default: def });
+const optionalQueryText = optionalText(200);
+
+export const userListQuerySchema = object({
+  q: optionalQueryText,
+  positionId: optional(int()),
+  filter: optional(oneOf(USER_LIST_FILTERS)),
+  page,
+  pageSize: pageSize(20, 100),
 });
 
 // ---------- Справочник удостоверений ----------
 
-export const catalogItemSchema = z.object({
-  name: trimmed(200).min(1, 'Укажите название'),
-  validityMonths: z.coerce
-    .number({ invalid_type_error: 'Укажите срок' })
-    .int('Срок — целое число месяцев')
-    .min(1, 'Срок должен быть не меньше 1 месяца')
-    .max(600, 'Слишком большой срок'),
-  sortOrder: z.coerce.number().int().min(0).default(0),
+export const catalogItemSchema = object({
+  name: text({ max: 200, message: 'Укажите название' }),
+  validityMonths: int({ min: 1, max: 600, message: 'Срок — целое число месяцев от 1 до 600' }),
+  sortOrder: int({ min: 0, default: 0 }),
 });
-export type CatalogItemRequest = z.infer<typeof catalogItemSchema>;
+export type CatalogItemRequest = Infer<typeof catalogItemSchema>;
+
+export const positionSchema = object({
+  name: text({ max: 150, message: 'Укажите название должности' }),
+  sortOrder: int({ min: 0, default: 0 }),
+});
+export type PositionRequest = Infer<typeof positionSchema>;
 
 // ---------- Удостоверения ----------
 
 /** Сотрудник вводит только дату выдачи, дата окончания считается автоматически. */
-export const userCredentialUpdateSchema = z.object({
-  issueDate: isoDate,
-});
-export type UserCredentialUpdateRequest = z.infer<typeof userCredentialUpdateSchema>;
+export const userCredentialUpdateSchema = object({ issueDate: isoDate });
 
-export const adminCredentialUpdateSchema = z.object({
-  issueDate: isoDate.optional(),
+export const adminCredentialUpdateSchema = object({
+  issueDate: optional(isoDate),
   number: optionalText(100),
   comment: optionalText(1000),
 });
-export type AdminCredentialUpdateRequest = z.infer<typeof adminCredentialUpdateSchema>;
+export type AdminCredentialUpdateRequest = Infer<typeof adminCredentialUpdateSchema>;
 
-export const credentialListQuerySchema = z.object({
-  q: z.string().trim().optional(),
-  status: z.enum(CREDENTIAL_STATUSES).optional(),
-  credentialId: z.coerce.number().int().optional(),
-  userId: z.coerce.number().int().optional(),
-  marked: z
-    .enum(['true', 'false'])
-    .transform((v) => v === 'true')
-    .optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+export const credentialListQuerySchema = object({
+  q: optionalQueryText,
+  status: optional(oneOf(CREDENTIAL_STATUSES)),
+  credentialId: optional(int()),
+  userId: optional(int()),
+  marked: queryBool(),
+  page,
+  pageSize: pageSize(50, 200),
 });
 
 // ---------- Сообщения ----------
 
-export const sendMessageSchema = z
-  .object({
-    recipient: z.enum(['user', 'all']),
-    userId: z.number().int().optional(),
-    subject: trimmed(200).min(1, 'Укажите тему'),
-    body: trimmed(5000).min(1, 'Введите текст сообщения'),
-  })
-  .refine((v) => v.recipient === 'all' || v.userId !== undefined, {
-    message: 'Выберите получателя',
-    path: ['userId'],
-  });
-export type SendMessageRequest = z.infer<typeof sendMessageSchema>;
+export const sendMessageSchema = object(
+  {
+    recipient: oneOf(['user', 'all'] as const),
+    userId: optional(int()),
+    subject: text({ max: 200, message: 'Укажите тему' }),
+    body: text({ max: 5000, message: 'Введите текст сообщения' }),
+  },
+  (v) => (v.recipient === 'user' && v.userId === undefined ? ['userId', 'Выберите получателя'] : null),
+);
+export type SendMessageRequest = Infer<typeof sendMessageSchema>;
 
-// ---------- Журнал ----------
-
-export const auditListQuerySchema = z.object({
-  actorId: z.coerce.number().int().optional(),
-  targetUserId: z.coerce.number().int().optional(),
-  entityType: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(30),
+export const overviewQuerySchema = object({
+  q: optionalQueryText,
+  positionId: optional(int()),
 });
 
-export const paginationQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(30),
+// ---------- Списки ----------
+
+export const notificationsQuerySchema = object({
+  kind: optional(oneOf(['MESSAGE', 'EXPIRY'] as const)),
+  page,
+  pageSize: pageSize(30, 100),
 });
+
+export const auditListQuerySchema = object({
+  entityType: optional(oneOf(['User', 'UserCredential', 'Credential', 'Position', 'Message'] as const)),
+  targetUserId: optional(int()),
+  page,
+  pageSize: pageSize(30, 100),
+});
+
+export const paginationQuerySchema = object({ page, pageSize: pageSize(30, 100) });

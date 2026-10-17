@@ -1,15 +1,15 @@
 import type { User } from '@prisma/client';
 import type { MessageDto, Paginated, SendMessageRequest } from '@app/shared';
-import { prisma } from '../db';
-import { badRequest } from '../utils/errors';
-import { audit } from './audit.service';
+import { prisma } from '../db.ts';
+import { badRequest } from '../utils/errors.ts';
+import { audit } from './audit.service.ts';
 
 /**
  * Сообщение сохраняется один раз, а каждому получателю создаётся запись в центре
  * уведомлений со своим статусом «прочитано». Broadcast получают все активные
  * сотрудники на момент отправки.
  */
-export async function send(actor: User, input: SendMessageRequest) {
+export async function send(actor: User & { fullName: string }, input: SendMessageRequest) {
   const recipients = await prisma.user.findMany({
     where:
       input.recipient === 'all'
@@ -37,6 +37,24 @@ export async function send(actor: User, input: SendMessageRequest) {
         messageId: message.id,
       })),
     });
+    // Остальные администраторы видят все отправленные сообщения у себя в уведомлениях.
+    // messageId не ставим — иначе копии попадут в статистику «прочитали X из Y».
+    const otherAdmins = await tx.user.findMany({
+      where: { role: 'ADMIN', isDeleted: false, isActive: true, id: { notIn: [actor.id, ...recipients.map((r) => r.id)] } },
+      select: { id: true },
+    });
+    if (otherAdmins.length > 0) {
+      const to = isBroadcast ? 'всем сотрудникам' : recipients[0].fullName;
+      await tx.notification.createMany({
+        data: otherAdmins.map((a) => ({
+          userId: a.id,
+          kind: 'MESSAGE' as const,
+          title: `${actor.fullName} → ${to}: ${input.subject}`,
+          body: input.body,
+          link: '/admin/messages',
+        })),
+      });
+    }
     await audit(tx, {
       actorId: actor.id,
       action: 'message.send',

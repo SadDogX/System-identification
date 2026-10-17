@@ -1,49 +1,34 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Chip,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Pagination,
-  Paper,
-  Stack,
-  Tab,
-  Tabs,
-  Typography,
-} from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
 import type { NotificationDto, Paginated } from '@app/shared';
-import { api } from '../api/client';
-import { NotificationIcon, useNotificationMutations } from '../components/NotificationBell';
-import { PageHeader } from '../components/PageHeader';
-import { formatDateTime } from '../utils';
+import { api } from '../api.ts';
+import { NotificationIcon, dismissRead, markAllRead, markRead } from '../components/NotificationBell.tsx';
+import { Alert, ConfirmDialog, PageHeader, Pager } from '../components/ui.tsx';
+import { Icon } from '../components/Icon.tsx';
+import { useQuery } from '../data.ts';
+import { useRouter } from '../router.tsx';
+import { formatDateTime } from '../utils.ts';
 
 type Kind = 'ALL' | 'EXPIRY' | 'MESSAGE';
-const PAGE_SIZE = 20;
+const TABS: { value: Kind; label: string }[] = [
+  { value: 'ALL', label: 'Все' },
+  { value: 'EXPIRY', label: 'Сроки' },
+  { value: 'MESSAGE', label: 'Сообщения' },
+];
 
 export function NotificationsPage() {
-  const navigate = useNavigate();
+  const { navigate } = useRouter();
   const [kind, setKind] = useState<Kind>('ALL');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [expanded, setExpanded] = useState<number | null>(null);
-  const { markRead, markAll } = useNotificationMutations();
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
 
-  const { data } = useQuery({
-    queryKey: ['notifications', 'list', kind, page],
-    queryFn: () =>
-      api
-        .get<Paginated<NotificationDto>>('/me/notifications', {
-          params: { page, pageSize: PAGE_SIZE, ...(kind !== 'ALL' && { kind }) },
-        })
-        .then((r) => r.data),
-  });
+  const { data, error } = useQuery(`notifications:list:${kind}:${page}:${pageSize}`, () =>
+    api.get<Paginated<NotificationDto>>('/me/notifications', { page, pageSize, kind: kind === 'ALL' ? undefined : kind }),
+  );
 
   const open = (n: NotificationDto) => {
-    if (!n.readAt) markRead.mutate(n.id);
+    markRead(n).catch(() => {});
     // Сообщение раскрываем на месте, остальные ведут на нужную страницу
     if (n.kind === 'MESSAGE' || !n.link) setExpanded(expanded === n.id ? null : n.id);
     else navigate(n.link);
@@ -54,68 +39,75 @@ export function NotificationsPage() {
       <PageHeader
         title="Уведомления"
         actions={
-          <Button variant="outlined" onClick={() => markAll.mutate()}>
-            Отметить все как прочитанные
-          </Button>
+          <>
+            <button type="button" className="btn btn-outline" onClick={() => markAllRead().catch(() => {})}>
+              Отметить все как прочитанные
+            </button>
+            <button type="button" className="btn btn-outline" onClick={() => setConfirmDismiss(true)}>
+              <Icon name="clearAll" small /> Очистить прочитанные
+            </button>
+          </>
         }
       />
-      <Paper>
-        <Tabs
-          value={kind}
-          onChange={(_, v) => {
-            setKind(v);
-            setPage(1);
-          }}
-          sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}
-          variant="scrollable"
-        >
-          <Tab value="ALL" label="Все" />
-          <Tab value="EXPIRY" label="Сроки" />
-          <Tab value="MESSAGE" label="Сообщения" />
-        </Tabs>
-        <List disablePadding>
-          {data?.items.length === 0 && (
-            <Typography color="text.secondary" sx={{ p: 4, textAlign: 'center' }}>
-              Уведомлений нет
-            </Typography>
-          )}
-          {data?.items.map((n) => (
-            <ListItemButton
-              key={n.id}
-              onClick={() => open(n)}
-              divider
-              sx={{ alignItems: 'flex-start', bgcolor: n.readAt ? undefined : 'action.hover' }}
+      {error && <Alert>{error}</Alert>}
+      <div className="panel">
+        <div className="tabs" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={kind === t.value}
+              className={`tab${kind === t.value ? ' active' : ''}`}
+              onClick={() => {
+                setKind(t.value);
+                setPage(1);
+              }}
             >
-              <ListItemIcon sx={{ minWidth: 36, mt: 0.5 }}>
-                <NotificationIcon n={n} />
-              </ListItemIcon>
-              <ListItemText
-                primary={
-                  <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                    <Typography fontWeight={n.readAt ? 400 : 600}>{n.title}</Typography>
-                    {!n.readAt && <Chip size="small" label="Новое" color="primary" />}
-                  </Stack>
-                }
-                secondary={
-                  <>
-                    {(expanded === n.id || n.kind !== 'MESSAGE') && (
-                      <Typography component="span" variant="body2" display="block" sx={{ whiteSpace: 'pre-wrap', my: 0.5 }} color="text.primary">
-                        {n.body}
-                      </Typography>
-                    )}
-                    {formatDateTime(n.createdAt)}
-                  </>
-                }
-              />
-            </ListItemButton>
+              {t.label}
+            </button>
           ))}
-        </List>
-        {data && data.total > PAGE_SIZE && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-            <Pagination count={Math.ceil(data.total / PAGE_SIZE)} page={page} onChange={(_, p) => setPage(p)} />
-          </Box>
+        </div>
+        {data?.items.length === 0 && <div className="empty">Уведомлений нет</div>}
+        {data?.items.map((n) => (
+          <button key={n.id} type="button" className={`note${n.readAt ? '' : ' unread'}`} onClick={() => open(n)}>
+            <NotificationIcon n={n} />
+            <span className="grow">
+              <span className="row wrap">
+                <span className="note-title">{n.title}</span>
+                {!n.readAt && <span className="chip small primary">Новое</span>}
+              </span>
+              {(expanded === n.id || n.kind !== 'MESSAGE') && <span className="pre" style={{ display: 'block', margin: '4px 0' }}>{n.body}</span>}
+              <span className="muted small">{formatDateTime(n.createdAt)}</span>
+            </span>
+          </button>
+        ))}
+        <ConfirmDialog
+          open={confirmDismiss}
+          title="Очистить прочитанные?"
+          text="Все прочитанные уведомления и сообщения будут убраны из списка. Непрочитанные останутся."
+          confirmText="Очистить"
+          onConfirm={() => {
+            setConfirmDismiss(false);
+            setPage(1);
+            dismissRead().catch(() => {});
+          }}
+          onClose={() => setConfirmDismiss(false)}
+        />
+        {data && data.total > 0 && (
+          <Pager
+            total={data.total}
+            page={page}
+            pageSize={pageSize}
+            sizes={[20, 50, 100]}
+            onPage={setPage}
+            onPageSize={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+          />
         )}
-      </Paper>
+      </div>
     </>
   );
 }

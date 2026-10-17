@@ -1,12 +1,14 @@
 import type { Request, Response } from 'express';
-import { currentUser } from '../middleware/auth';
-import { idParam, validQuery } from '../middleware/validate';
-import * as users from '../services/users.service';
-import * as catalog from '../services/catalog.service';
-import * as credentials from '../services/credentials.service';
-import * as messages from '../services/messages.service';
-import * as auditLog from '../services/auditLog.service';
-import { getDashboard } from '../services/dashboard.service';
+import { currentUser } from '../middleware/auth.ts';
+import { idParam, validQuery } from '../middleware/validate.ts';
+import * as users from '../services/users.service.ts';
+import * as catalog from '../services/catalog.service.ts';
+import * as credentials from '../services/credentials.service.ts';
+import * as messages from '../services/messages.service.ts';
+import * as auditLog from '../services/auditLog.service.ts';
+import { getDashboard } from '../services/dashboard.service.ts';
+import * as positions from '../services/positions.service.ts';
+import { getOverview } from '../services/overview.service.ts';
 
 // ---------- Дашборд ----------
 
@@ -104,4 +106,30 @@ export async function messageHistory(req: Request, res: Response) {
 
 export async function listAuditLog(req: Request, res: Response) {
   res.json(await auditLog.list(validQuery(req)));
+}
+
+// ---------- Должности и сводная таблица ----------
+
+export async function listPositions(req: Request, res: Response) {
+  res.json(await positions.list(req.query.archived === 'true'));
+}
+
+export async function createPosition(req: Request, res: Response) {
+  res.status(201).json(await positions.create(currentUser(req), req.body));
+}
+
+export async function updatePosition(req: Request, res: Response) {
+  res.json(await positions.update(currentUser(req), idParam(req), req.body));
+}
+
+export async function archivePosition(req: Request, res: Response) {
+  res.json(await positions.setArchived(currentUser(req), idParam(req), true));
+}
+
+export async function unarchivePosition(req: Request, res: Response) {
+  res.json(await positions.setArchived(currentUser(req), idParam(req), false));
+}
+
+export async function overview(req: Request, res: Response) {
+  res.json(await getOverview(validQuery(req)));
 }

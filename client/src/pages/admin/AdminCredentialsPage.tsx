@@ -1,17 +1,4 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import {
-  FormControlLabel,
-  InputAdornment,
-  MenuItem,
-  Paper,
-  Stack,
-  Switch,
-  TablePagination,
-  TextField,
-} from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   CREDENTIAL_STATUSES,
   type CatalogItemDto,
@@ -20,123 +7,107 @@ import {
   type Paginated,
   type UserCredentialDto,
 } from '@app/shared';
-import { api } from '../../api/client';
-import { useAuth } from '../../auth/AuthContext';
-import { useAdminCredentialActions } from '../../components/AdminCredentialActions';
-import { CredentialView, ViewToggle } from '../../components/CredentialViews';
-import { PageHeader } from '../../components/PageHeader';
-import { QuickFilters, type StatusFilter } from '../../components/QuickFilters';
-import { useViewMode } from '../../hooks/useViewMode';
+import { api } from '../../api.ts';
+import { useAuth } from '../../auth.tsx';
+import { useAdminCredentialActions } from '../../components/AdminCredentialActions.tsx';
+import { CredentialView, ViewToggle, useViewMode } from '../../components/CredentialViews.tsx';
+import { QuickFilters, type StatusFilter } from '../../components/QuickFilters.tsx';
+import { Alert, Checkbox, PageHeader, Pager, SearchInput, SelectField } from '../../components/ui.tsx';
+import { useQuery } from '../../data.ts';
+import { useSearchParam } from '../../router.tsx';
 
 export function AdminCredentialsPage() {
   const { settings } = useAuth();
-  const [params, setParams] = useSearchParams();
   const [mode, setMode, isMobile] = useViewMode();
   const { renderActions, dialogs } = useAdminCredentialActions();
   const [q, setQ] = useState('');
-  const [credentialId, setCredentialId] = useState<number | ''>('');
+  const [credentialId, setCredentialId] = useState('');
   const [marked, setMarked] = useState(false);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
   // Статус живёт в URL — на отфильтрованный список можно дать ссылку (дашборд, сводка)
-  const rawStatus = params.get('status');
+  const [rawStatus, setStatus] = useSearchParam('status');
   const status: StatusFilter = CREDENTIAL_STATUSES.includes(rawStatus as CredentialStatus) ? (rawStatus as CredentialStatus) : 'ALL';
 
-  const catalog = useQuery({
-    queryKey: ['admin', 'catalog', false],
-    queryFn: () => api.get<CatalogItemDto[]>('/admin/catalog').then((r) => r.data),
-  });
-  const dashboard = useQuery({
-    queryKey: ['admin', 'dashboard'],
-    queryFn: () => api.get<DashboardDto>('/admin/dashboard').then((r) => r.data),
-  });
-  const { data } = useQuery({
-    queryKey: ['admin', 'credentials', { q, status, credentialId, marked, page, pageSize }],
-    queryFn: () =>
-      api
-        .get<Paginated<UserCredentialDto>>('/admin/credentials', {
-          params: {
-            q: q || undefined,
-            status: status === 'ALL' ? undefined : status,
-            credentialId: credentialId || undefined,
-            marked: marked || undefined,
-            page: page + 1,
-            pageSize,
-          },
-        })
-        .then((r) => r.data),
-    placeholderData: keepPreviousData,
-  });
+  const catalog = useQuery('admin:catalog:active', () => api.get<CatalogItemDto[]>('/admin/catalog'));
+  const dashboard = useQuery('admin:dashboard', () => api.get<DashboardDto>('/admin/dashboard'));
+  const { data, error } = useQuery(`admin:credentials:${q}:${status}:${credentialId}:${marked}:${page}:${pageSize}`, () =>
+    api.get<Paginated<UserCredentialDto>>('/admin/credentials', {
+      q,
+      status: status === 'ALL' ? undefined : status,
+      credentialId,
+      marked,
+      page,
+      pageSize,
+    }),
+  );
 
   return (
     <>
-      <PageHeader
-        title="Удостоверения"
-        subtitle="Сначала ближайшие истечения"
-        actions={<ViewToggle value={mode} onChange={setMode} hidden={isMobile} />}
-      />
-      <Stack spacing={2} sx={{ mb: 2 }}>
+      <PageHeader title="Удостоверения" subtitle="Сначала ближайшие истечения" actions={<ViewToggle value={mode} onChange={setMode} hidden={isMobile} />} />
+      <div className="stack mb">
         <QuickFilters
           value={status}
           thresholds={settings}
           counts={marked ? undefined : dashboard.data?.counts}
           onChange={(v) => {
-            setParams(v === 'ALL' ? {} : { status: v });
-            setPage(0);
+            setStatus(v === 'ALL' ? null : v);
+            setPage(1);
           }}
         />
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-          <TextField
-            placeholder="Поиск: ФИО, логин, номер, удостоверение"
+        <div className="row wrap" style={{ alignItems: 'flex-end' }}>
+          <SearchInput
             value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(0);
+            placeholder="Поиск: ФИО, логин, номер, удостоверение"
+            onChange={(v) => {
+              setQ(v);
+              setPage(1);
             }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
-            sx={{ bgcolor: 'background.paper' }}
           />
-          <TextField
-            select
-            label="Удостоверение"
-            value={credentialId}
-            onChange={(e) => {
-              setCredentialId(e.target.value === '' ? '' : Number(e.target.value));
-              setPage(0);
-            }}
-            sx={{ minWidth: { md: 280 }, bgcolor: 'background.paper' }}
-          >
-            <MenuItem value="">Все</MenuItem>
-            {catalog.data?.map((c) => (
-              <MenuItem key={c.id} value={c.id}>
-                {c.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <FormControlLabel
-            sx={{ whiteSpace: 'nowrap' }}
-            control={<Switch checked={marked} onChange={(e) => { setMarked(e.target.checked); setPage(0); }} />}
+          <div style={{ minWidth: 260 }}>
+            <SelectField
+              label="Удостоверение"
+              value={credentialId}
+              onChange={(e) => {
+                setCredentialId(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Все</option>
+              {catalog.data?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <Checkbox
             label="Помеченные на удаление"
+            checked={marked}
+            onChange={(v) => {
+              setMarked(v);
+              setPage(1);
+            }}
           />
-        </Stack>
-      </Stack>
+        </div>
+      </div>
 
-      <Paper sx={mode === 'cards' ? { bgcolor: 'transparent', border: 'none' } : undefined}>
-        <CredentialView mode={mode} items={data?.items ?? []} showUser actions={renderActions} emptyText="Ничего не найдено" />
-        <TablePagination
-          component="div"
-          count={data?.total ?? 0}
+      {error && <Alert>{error}</Alert>}
+      <CredentialView mode={mode} items={data?.items ?? []} showUser actions={renderActions} emptyText="Ничего не найдено" />
+      <div className={mode === 'table' ? '' : 'panel'} style={{ marginTop: mode === 'table' ? 0 : 16 }}>
+        <Pager
+          total={data?.total ?? 0}
           page={page}
-          rowsPerPage={pageSize}
-          onPageChange={(_, p) => setPage(p)}
-          onRowsPerPageChange={(e) => {
-            setPageSize(Number(e.target.value));
-            setPage(0);
+          pageSize={pageSize}
+          sizes={[50, 100, 200]}
+          onPage={setPage}
+          onPageSize={(s) => {
+            setPageSize(s);
+            setPage(1);
           }}
-          rowsPerPageOptions={[50, 100, 200]}
         />
-      </Paper>
+      </div>
       {dialogs}
     </>
   );

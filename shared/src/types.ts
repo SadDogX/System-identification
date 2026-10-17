@@ -1,5 +1,5 @@
-import type { Role, UiSettings } from './schemas';
-import type { CredentialStatus, StatusThresholds } from './status';
+import type { Role, UiSettings } from './schemas.ts';
+import type { CredentialStatus, StatusThresholds } from './status.ts';
 
 export interface Paginated<T> {
   items: T[];
@@ -13,6 +13,8 @@ export interface UserDto {
   fullName: string;
   login: string;
   role: Role;
+  positionId: number | null;
+  /** Название должности из справочника. */
   position: string | null;
   phone: string | null;
   email: string | null;
@@ -44,6 +46,14 @@ export interface CatalogItemDto {
   isArchived: boolean;
 }
 
+export interface PositionDto {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isArchived: boolean;
+  usersCount: number;
+}
+
 export interface UserCredentialDto {
   id: number;
   userId: number;
@@ -55,6 +65,8 @@ export interface UserCredentialDto {
   expiryDate: string | null;
   comment: string | null;
   isMarkedForDeletion: boolean;
+  /** MIME-тип загруженного фото/скана, null — не загружено. */
+  photoMime: string | null;
   status: CredentialStatus;
   daysLeft: number | null;
   updatedAt: string;
@@ -106,6 +118,15 @@ export interface DashboardDto {
   criticalUsers: { id: number; fullName: string; redCount: number; nearestExpiry: string | null }[];
   recentChanges: AuditLogDto[];
   unreadNotifications: number;
+}
+
+/** Сводная таблица «сотрудники × удостоверения». */
+export interface OverviewDto {
+  credentials: { id: number; name: string }[];
+  rows: {
+    user: { id: number; fullName: string; position: string | null };
+    cells: Record<number, { id: number; status: CredentialStatus; expiryDate: string | null; daysLeft: number | null; marked: boolean }>;
+  }[];
 }
 
 export interface ApiErrorBody {

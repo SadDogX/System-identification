@@ -10,19 +10,29 @@ import {
   type UserListItemDto,
   USER_LIST_FILTERS,
 } from '@app/shared';
-import { prisma } from '../db';
-import { badRequest, conflict, notFound } from '../utils/errors';
-import { toUserDto } from '../utils/mappers';
-import { audit, diffOf } from './audit.service';
-import { hashPassword } from './auth.service';
-import { ensureUserCredentials } from './credentials.service';
-import { statusWhere, visibleCredentialWhere } from './credentialFilters';
-import { getDateContext } from './settings.service';
+import { prisma, withPosition, type UserWithPosition } from '../db.ts';
+import { badRequest, conflict, notFound } from '../utils/errors.ts';
+import { toUserDto } from '../utils/mappers.ts';
+import { audit, diffOf } from './audit.service.ts';
+import { hashPassword } from './auth.service.ts';
+import { ensureUserCredentials } from './credentials.service.ts';
+import { statusWhere, visibleCredentialWhere } from './credentialFilters.ts';
+import { getDateContext } from './settings.service.ts';
 
-const PROFILE_FIELDS = ['fullName', 'role', 'position', 'phone', 'email', 'isActive'] as const;
+const PROFILE_FIELDS = ['fullName', 'role', 'positionId', 'phone', 'email', 'isActive'] as const;
+/** В журнал пишем название должности, а не её id. */
+const AUDIT_FIELDS = ['fullName', 'login', 'role', 'position', 'phone', 'email', 'isActive'];
+const auditView = (u: UserWithPosition) => ({ ...u, position: u.position?.name ?? null });
 
-async function findActiveUser(id: number): Promise<User> {
-  const user = await prisma.user.findFirst({ where: { id, isDeleted: false } });
+async function assertPosition(positionId: number | null | undefined) {
+  if (!positionId) return;
+  if (!(await prisma.position.findUnique({ where: { id: positionId } }))) {
+    throw badRequest('Ошибка валидации', { positionId: 'Должность не найдена' });
+  }
+}
+
+async function findActiveUser(id: number): Promise<UserWithPosition> {
+  const user = await prisma.user.findFirst({ where: { id, isDeleted: false }, include: withPosition });
   if (!user) throw notFound('Пользователь не найден');
   return user;
 }
@@ -38,7 +48,8 @@ async function assertNotLastAdmin(userId: number) {
 
 interface ListQuery {
   q?: string;
-  filter: (typeof USER_LIST_FILTERS)[number];
+  positionId?: number;
+  filter?: (typeof USER_LIST_FILTERS)[number];
   page: number;
   pageSize: number;
 }
@@ -54,7 +65,7 @@ export async function list(query: ListQuery): Promise<Paginated<UserListItemDto>
       },
     },
   });
-  const filterWhere: Record<ListQuery['filter'], Prisma.UserWhereInput> = {
+  const filterWhere: Record<NonNullable<ListQuery['filter']>, Prisma.UserWhereInput> = {
     all: {},
     USER: { role: 'USER' },
     ADMIN: { role: 'ADMIN' },
@@ -64,13 +75,15 @@ export async function list(query: ListQuery): Promise<Paginated<UserListItemDto>
   };
   const where: Prisma.UserWhereInput = {
     isDeleted: false,
-    ...filterWhere[query.filter],
+    ...filterWhere[query.filter ?? 'all'],
+    ...(query.positionId && { positionId: query.positionId }),
     ...(query.q && { OR: [{ fullName: { contains: query.q } }, { login: { contains: query.q } }] }),
   };
 
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where,
+      include: withPosition,
       orderBy: { fullName: 'asc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
@@ -127,6 +140,7 @@ export async function create(actor: User, input: CreateUserRequest) {
   if (await prisma.user.findUnique({ where: { login: input.login } })) {
     throw conflict('Пользователь с таким логином уже существует');
   }
+  await assertPosition(input.positionId);
   const passwordHash = await hashPassword(input.password);
   const user = await prisma.$transaction(async (tx) => {
     const created = await tx.user.create({
@@ -135,11 +149,12 @@ export async function create(actor: User, input: CreateUserRequest) {
         login: input.login,
         passwordHash,
         role: input.role,
-        position: input.position ?? null,
+        positionId: input.positionId ?? null,
         phone: input.phone ?? null,
         email: input.email ?? null,
         mustChangePassword: true,
       },
+      include: withPosition,
     });
     // Удостоверения ведутся только у сотрудников
     if (created.role === 'USER') await ensureUserCredentials(tx, created.id);
@@ -149,7 +164,7 @@ export async function create(actor: User, input: CreateUserRequest) {
       entityType: 'User',
       entityId: created.id,
       targetUserId: created.id,
-      diff: diffOf(null, created, ['fullName', 'login', 'role', 'position', 'phone', 'email']),
+      diff: diffOf(null, auditView(created), AUDIT_FIELDS.filter((f) => f !== 'isActive')),
     });
     return created;
   });
@@ -167,8 +182,9 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
   const losesAdmin =
     existing.role === 'ADMIN' && ((input.role && input.role !== 'ADMIN') || input.isActive === false);
   if (losesAdmin) await assertNotLastAdmin(id);
+  await assertPosition(input.positionId);
 
-  const data: Prisma.UserUpdateInput = {};
+  const data: Prisma.UserUncheckedUpdateInput = {};
   for (const field of PROFILE_FIELDS) {
     if (input[field] !== undefined) (data as Record<string, unknown>)[field] = input[field];
   }
@@ -179,7 +195,7 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
   if (revokeTokens) data.tokenVersion = { increment: 1 };
 
   const user = await prisma.$transaction(async (tx) => {
-    const updated = await tx.user.update({ where: { id }, data });
+    const updated = await tx.user.update({ where: { id }, data, include: withPosition });
     if (updated.role === 'USER') await ensureUserCredentials(tx, id);
     await audit(tx, {
       actorId: actor.id,
@@ -187,7 +203,7 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
       entityType: 'User',
       entityId: id,
       targetUserId: id,
-      diff: diffOf(existing, updated, [...PROFILE_FIELDS]),
+      diff: diffOf(auditView(existing), auditView(updated), AUDIT_FIELDS),
     });
     return updated;
   });
@@ -235,12 +251,12 @@ export async function resetPassword(actor: User, id: number, password: string) {
 
 // ---------- Собственный профиль ----------
 
-export async function updateProfile(user: User, input: UpdateProfileRequest) {
+export async function updateProfile(user: UserWithPosition, input: UpdateProfileRequest) {
   const data: Prisma.UserUpdateInput = {};
   if (input.phone !== undefined) data.phone = input.phone;
   if (input.email !== undefined) data.email = input.email;
   const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.user.update({ where: { id: user.id }, data });
+    const row = await tx.user.update({ where: { id: user.id }, data, include: withPosition });
     await audit(tx, {
       actorId: user.id,
       action: 'profile.update',
@@ -259,6 +275,7 @@ export async function updateUiSettings(user: User, input: UiSettings) {
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: { uiSettings: { ...current, ...input } },
+    include: withPosition,
   });
   return toUserDto(updated);
 }

@@ -5,16 +5,18 @@ import {
   catalogItemSchema,
   createUserSchema,
   credentialListQuerySchema,
+  overviewQuerySchema,
   paginationQuerySchema,
+  positionSchema,
   resetPasswordSchema,
   sendMessageSchema,
   updateUserSchema,
   userListQuerySchema,
 } from '@app/shared';
-import { authenticate, requirePasswordChanged, requireRole } from '../middleware/auth';
-import { validate } from '../middleware/validate';
-import { asyncHandler as h } from '../utils/asyncHandler';
-import * as admin from '../controllers/admin.controller';
+import { authenticate, requirePasswordChanged, requireRole } from '../middleware/auth.ts';
+import { validate } from '../middleware/validate.ts';
+import { asyncHandler as h } from '../utils/asyncHandler.ts';
+import * as admin from '../controllers/admin.controller.ts';
 
 export const adminRouter = Router();
 
@@ -46,3 +48,11 @@ adminRouter.get('/messages', validate(paginationQuerySchema, 'query'), h(admin.m
 adminRouter.post('/messages', validate(sendMessageSchema), h(admin.sendMessage));
 
 adminRouter.get('/audit-log', validate(auditListQuerySchema, 'query'), h(admin.listAuditLog));
+
+adminRouter.get('/overview', validate(overviewQuerySchema, 'query'), h(admin.overview));
+
+adminRouter.get('/positions', h(admin.listPositions));
+adminRouter.post('/positions', validate(positionSchema), h(admin.createPosition));
+adminRouter.put('/positions/:id', validate(positionSchema), h(admin.updatePosition));
+adminRouter.post('/positions/:id/archive', h(admin.archivePosition));
+adminRouter.post('/positions/:id/unarchive', h(admin.unarchivePosition));

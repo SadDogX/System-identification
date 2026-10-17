@@ -1,30 +1,12 @@
-import { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Button,
-  Chip,
-  FormControlLabel,
-  List,
-  ListItem,
-  ListItemText,
-  Pagination,
-  Paper,
-  Radio,
-  RadioGroup,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { sendMessageSchema, type MessageDto, type Paginated, type SendMessageRequest } from '@app/shared';
-import { api, errorMessage } from '../../api/client';
-import { PageHeader } from '../../components/PageHeader';
-import { formatDateTime } from '../../utils';
+import { useEffect, useState } from 'react';
+import { sendMessageSchema, type MessageDto, type Paginated } from '@app/shared';
+import { api, errorMessage } from '../../api.ts';
+import { Icon } from '../../components/Icon.tsx';
+import { Alert, PageHeader, Pager, SelectField, TextArea, TextField } from '../../components/ui.tsx';
+import { invalidate, useAction, useQuery } from '../../data.ts';
+import { useForm } from '../../form.ts';
+import { formatDateTime } from '../../utils.ts';
+import { takeMessageDraft } from '../../messageDraft.ts';
 
 interface UserOption {
   id: number;
@@ -32,125 +14,120 @@ interface UserOption {
   login: string;
 }
 
-const PAGE_SIZE = 10;
-
 export function MessagesPage() {
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const { register, handleSubmit, control, watch, reset, formState } = useForm<SendMessageRequest>({
-    resolver: zodResolver(sendMessageSchema),
-    defaultValues: { recipient: 'user', subject: '', body: '' },
-  });
-  const recipient = watch('recipient');
+  const [pageSize, setPageSize] = useState(10);
+  const form = useForm({ recipient: 'user', userId: '', subject: '', body: '' });
+  const { reset } = form;
 
-  const options = useQuery({
-    queryKey: ['admin', 'user-options'],
-    queryFn: () => api.get<UserOption[]>('/admin/users/options').then((r) => r.data),
-  });
-  const history = useQuery({
-    queryKey: ['admin', 'messages', page],
-    queryFn: () => api.get<Paginated<MessageDto>>('/admin/messages', { params: { page, pageSize: PAGE_SIZE } }).then((r) => r.data),
-  });
+  // Черновик из карточки сотрудника: получатель, тема и текст уже заполнены
+  useEffect(() => {
+    const draft = takeMessageDraft();
+    if (draft) reset({ recipient: 'user', userId: String(draft.userId), subject: draft.subject, body: draft.body });
+  }, [reset]);
 
-  const send = useMutation({
-    mutationFn: (data: SendMessageRequest) => api.post<{ recipientsCount: number }>('/admin/messages', data).then((r) => r.data),
+  const options = useQuery('admin:user-options', () => api.get<UserOption[]>('/admin/users/options'));
+  const history = useQuery(`admin:messages:${page}:${pageSize}`, () => api.get<Paginated<MessageDto>>('/admin/messages', { page, pageSize }));
+
+  const send = useAction((data: unknown) => api.post<{ recipientsCount: number }>('/admin/messages', data), {
     onSuccess: () => {
-      reset({ recipient, subject: '', body: '' });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'messages'] });
+      form.reset({ ...form.values, subject: '', body: '' });
+      invalidate('admin:messages');
     },
+    onError: (err) => form.applyServerErrors(err),
   });
+  const [sentTo, setSentTo] = useState<number | null>(null);
+
+  const submit = async () => {
+    const { recipient, userId, subject, body } = form.values;
+    const payload = { recipient, subject, body, ...(recipient === 'user' && userId && { userId: Number(userId) }) };
+    if (!form.validate(sendMessageSchema, payload)) return;
+    setSentTo(null);
+    const ok = await send.run(payload);
+    if (ok) setSentTo(recipient === 'all' ? -1 : Number(userId));
+  };
 
   return (
     <>
       <PageHeader title="Сообщения" subtitle="Сообщение появится в центре уведомлений получателя" />
-      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, alignItems: 'start' }}>
-        <Paper sx={{ p: 3 }}>
-          <form onSubmit={handleSubmit((d) => send.mutate(d))} noValidate>
-            <Stack spacing={2}>
-              <Typography fontWeight={600}>Новое сообщение</Typography>
-              <Controller
-                name="recipient"
-                control={control}
-                render={({ field }) => (
-                  <RadioGroup row {...field}>
-                    <FormControlLabel value="user" control={<Radio />} label="Конкретный пользователь" />
-                    <FormControlLabel value="all" control={<Radio />} label="Все пользователи" />
-                  </RadioGroup>
-                )}
-              />
-              {recipient === 'user' && (
-                <Controller
-                  name="userId"
-                  control={control}
-                  render={({ field }) => (
-                    <Autocomplete
-                      options={options.data ?? []}
-                      getOptionLabel={(o) => `${o.fullName} (${o.login})`}
-                      value={options.data?.find((o) => o.id === field.value) ?? null}
-                      onChange={(_, v) => field.onChange(v?.id)}
-                      noOptionsText="Нет активных сотрудников"
-                      renderInput={(params) => (
-                        <TextField {...params} label="Получатель" error={!!formState.errors.userId} helperText={formState.errors.userId?.message} />
-                      )}
-                    />
-                  )}
-                />
-              )}
-              {recipient === 'all' && <Alert severity="info">Сообщение получат все активные сотрудники.</Alert>}
-              <TextField label="Тема" {...register('subject')} error={!!formState.errors.subject} helperText={formState.errors.subject?.message} />
-              <TextField
-                label="Сообщение"
-                multiline
-                minRows={5}
-                {...register('body')}
-                error={!!formState.errors.body}
-                helperText={formState.errors.body?.message}
-              />
-              {send.isSuccess && <Alert severity="success">Отправлено получателям: {send.data.recipientsCount}</Alert>}
-              {send.isError && <Alert severity="error">{errorMessage(send.error)}</Alert>}
-              <Box>
-                <Button type="submit" variant="contained" startIcon={<SendIcon />} disabled={send.isPending}>
-                  Отправить
-                </Button>
-              </Box>
-            </Stack>
-          </form>
-        </Paper>
-
-        <Paper sx={{ p: 2 }}>
-          <Typography fontWeight={600} sx={{ mb: 1 }}>
-            Отправленные
-          </Typography>
-          {history.data?.items.length === 0 && <Typography color="text.secondary">Сообщений пока нет</Typography>}
-          <List disablePadding>
-            {history.data?.items.map((m) => (
-              <ListItem key={m.id} divider disableGutters sx={{ alignItems: 'flex-start' }}>
-                <ListItemText
-                  primary={
-                    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                      <Typography fontWeight={600}>{m.subject}</Typography>
-                      <Chip size="small" label={m.isBroadcast ? 'Всем' : m.recipient?.fullName ?? 'Лично'} variant="outlined" />
-                    </Stack>
-                  }
-                  secondary={
-                    <>
-                      <Typography component="span" variant="body2" display="block" color="text.primary" sx={{ whiteSpace: 'pre-wrap', my: 0.5 }}>
-                        {m.body}
-                      </Typography>
-                      {formatDateTime(m.createdAt)} · {m.sender.fullName} · прочитали {m.readCount} из {m.recipientsCount}
-                    </>
-                  }
-                />
-              </ListItem>
+      <div className="half-cols">
+        <form
+          noValidate
+          className="panel pad-lg stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <div className="bold">Новое сообщение</div>
+          <div className="row wrap" role="radiogroup" aria-label="Получатель" style={{ gap: 16 }}>
+            {[
+              ['user', 'Конкретный пользователь'],
+              ['all', 'Все пользователи'],
+            ].map(([value, label]) => (
+              <label key={value} className="check">
+                <input type="radio" name="recipient" value={value} checked={form.values.recipient === value} onChange={() => form.set('recipient', value)} />
+                {label}
+              </label>
             ))}
-          </List>
-          {history.data && history.data.total > PAGE_SIZE && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', pt: 2 }}>
-              <Pagination count={Math.ceil(history.data.total / PAGE_SIZE)} page={page} onChange={(_, p) => setPage(p)} />
-            </Box>
+          </div>
+          {form.values.recipient === 'user' ? (
+            <SelectField label="Получатель" {...form.field('userId')}>
+              <option value="">— выберите сотрудника —</option>
+              {options.data?.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.fullName} ({o.login})
+                </option>
+              ))}
+            </SelectField>
+          ) : (
+            <Alert kind="info">Сообщение получат все активные сотрудники.</Alert>
           )}
-        </Paper>
-      </Box>
+          <TextField label="Тема" {...form.field('subject')} />
+          <TextArea label="Сообщение" rows={6} {...form.field('body')} />
+          {send.done && sentTo !== null && <Alert kind="success">Сообщение отправлено</Alert>}
+          {send.error && !Object.values(form.errors).some(Boolean) ? <Alert>{errorMessage(send.error)}</Alert> : null}
+          <div>
+            <button type="submit" className="btn btn-primary" disabled={send.pending}>
+              <Icon name="send" small /> Отправить
+            </button>
+          </div>
+        </form>
+
+        <div className="panel pad">
+          <div className="panel-title">Отправленные</div>
+          {history.data?.items.length === 0 && <div className="muted">Сообщений пока нет</div>}
+          <ul className="list">
+            {history.data?.items.map((m) => (
+              <li key={m.id}>
+                <div className="row wrap">
+                  <span className="bold">{m.subject}</span>
+                  <span className="chip small">{m.isBroadcast ? 'Всем' : (m.recipient?.fullName ?? 'Лично')}</span>
+                </div>
+                <div className="pre" style={{ margin: '4px 0' }}>
+                  {m.body}
+                </div>
+                <div className="muted small">
+                  {formatDateTime(m.createdAt)} · {m.sender.fullName} · прочитали {m.readCount} из {m.recipientsCount}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {history.data && history.data.total > pageSize && (
+            <Pager
+              total={history.data.total}
+              page={page}
+              pageSize={pageSize}
+              sizes={[10, 20, 50]}
+              onPage={setPage}
+              onPageSize={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          )}
+        </div>
+      </div>
     </>
   );
 }

@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { expiryRangeForStatus, type CredentialStatus, type StatusThresholds } from '@app/shared';
-import { toDbDate } from '../utils/dates';
+import { toDbDate } from '../utils/dates.ts';
 
 /**
  * Записи, которые участвуют в списках и статистике:

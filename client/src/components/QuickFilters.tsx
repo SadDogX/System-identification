@@ -1,7 +1,5 @@
-import { Chip, Stack } from '@mui/material';
 import type { CredentialStatus } from '@app/shared';
-import { STATUS_COLORS } from '../theme';
-import { StatusDot } from './StatusBadge';
+import { StatusDot } from './StatusBadge.tsx';
 
 export type StatusFilter = CredentialStatus | 'ALL';
 
@@ -22,27 +20,25 @@ interface Props {
 
 export function QuickFilters({ value, onChange, thresholds, counts }: Props) {
   return (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+    <div className="row wrap">
       {OPTIONS.map((o) => {
         const selected = value === o.value;
         const count = o.value !== 'ALL' ? counts?.[o.value] : undefined;
-        const color = o.value !== 'ALL' ? STATUS_COLORS[o.value] : null;
+        const tone = o.value === 'ALL' ? 'all' : selected ? `s-${o.value}` : '';
         return (
-          <Chip
+          <button
             key={o.value}
-            icon={o.value !== 'ALL' ? <StatusDot status={o.value} /> : undefined}
-            label={count !== undefined ? `${o.label(thresholds)} · ${count}` : o.label(thresholds)}
+            type="button"
+            className={`chip ${tone}${selected ? ' selected' : ''}`}
+            aria-pressed={selected}
             onClick={() => onChange(o.value)}
-            variant={selected ? 'filled' : 'outlined'}
-            sx={{
-              pl: o.value !== 'ALL' ? 0.75 : 0,
-              fontWeight: selected ? 600 : 400,
-              ...(selected && color && { bgcolor: color.bg, borderColor: color.main, border: '1px solid', color: color.main }),
-            }}
-            color={selected && o.value === 'ALL' ? 'primary' : 'default'}
-          />
+          >
+            {o.value !== 'ALL' && <StatusDot status={o.value} />}
+            {o.label(thresholds)}
+            {count !== undefined && ` · ${count}`}
+          </button>
         );
       })}
-    </Stack>
+    </div>
   );
 }

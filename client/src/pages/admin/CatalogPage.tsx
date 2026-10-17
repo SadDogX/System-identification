@@ -1,113 +1,73 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Alert,
-  Button,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
-  IconButton,
-  Paper,
-  Stack,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Tooltip,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import UnarchiveIcon from '@mui/icons-material/Unarchive';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { catalogItemSchema, type CatalogItemDto } from '@app/shared';
-import { api, errorMessage } from '../../api/client';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { PageHeader } from '../../components/PageHeader';
-import { formatValidity } from '../../utils';
-
-interface Form {
-  name: string;
-  validityMonths: number;
-  sortOrder: number;
-}
+import { api, errorMessage } from '../../api.ts';
+import { Icon } from '../../components/Icon.tsx';
+import { Alert, Checkbox, ConfirmDialog, Dialog, PageHeader, TextField } from '../../components/ui.tsx';
+import { invalidate, useAction, useQuery } from '../../data.ts';
+import { useForm } from '../../form.ts';
+import { formatValidity } from '../../utils.ts';
 
 function ItemDialog({ open, item, onClose }: { open: boolean; item: CatalogItemDto | null; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const { register, handleSubmit, reset, formState } = useForm<Form>({ resolver: zodResolver(catalogItemSchema) as never });
+  const form = useForm({ name: '', validityMonths: '12', sortOrder: '0' });
+  const { reset } = form;
 
   useEffect(() => {
-    if (open) reset({ name: item?.name ?? '', validityMonths: item?.validityMonths ?? 12, sortOrder: item?.sortOrder ?? 0 });
+    if (open) reset({ name: item?.name ?? '', validityMonths: String(item?.validityMonths ?? 12), sortOrder: String(item?.sortOrder ?? 0) });
   }, [open, item, reset]);
 
-  const mutation = useMutation({
-    mutationFn: (data: Form) => (item ? api.put(`/admin/catalog/${item.id}`, data) : api.post('/admin/catalog', data)),
+  const save = useAction((data: unknown) => (item ? api.put(`/admin/catalog/${item.id}`, data) : api.post('/admin/catalog', data)), {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin'] });
+      invalidate('admin');
       onClose();
     },
+    onError: (err) => form.applyServerErrors(err),
   });
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <form onSubmit={handleSubmit((d) => mutation.mutate(d))} noValidate>
-        <DialogTitle>{item ? 'Изменить удостоверение' : 'Новое удостоверение'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField label="Название" required {...register('name')} error={!!formState.errors.name} helperText={formState.errors.name?.message} />
-            <TextField
-              label="Срок действия, месяцев"
-              type="number"
-              required
-              inputProps={{ min: 1 }}
-              {...register('validityMonths')}
-              error={!!formState.errors.validityMonths}
-              helperText={formState.errors.validityMonths?.message ?? 'Например, 12 — один год, 36 — три года'}
-            />
-            <TextField label="Порядок в списке" type="number" inputProps={{ min: 0 }} {...register('sortOrder')} />
-            {item && (
-              <Alert severity="info">
-                Новый срок применится к датам, которые будут введены после изменения. Уже заполненные даты не пересчитываются.
-              </Alert>
-            )}
-            {!item && <Alert severity="info">Удостоверение сразу появится у всех сотрудников со статусом «Не заполнено».</Alert>}
-            {mutation.isError && <Alert severity="error">{errorMessage(mutation.error)}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="contained" disabled={mutation.isPending}>
+    <Dialog
+      open={open}
+      title={item ? 'Изменить удостоверение' : 'Новое удостоверение'}
+      onClose={onClose}
+      onSubmit={() => {
+        const data = form.validate(catalogItemSchema);
+        if (data) save.run(data);
+      }}
+      actions={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={save.pending}>
             Сохранить
-          </Button>
-        </DialogActions>
-      </form>
+          </button>
+        </>
+      }
+    >
+      <TextField label="Название *" {...form.field('name')} />
+      <TextField label="Срок действия, месяцев *" type="number" min={1} help="Например, 12 — один год, 36 — три года" {...form.field('validityMonths')} />
+      <TextField label="Порядок в списке" type="number" min={0} {...form.field('sortOrder')} />
+      {item ? (
+        <Alert kind="info">Новый срок применится к датам, которые будут введены после изменения. Уже заполненные даты не пересчитываются.</Alert>
+      ) : (
+        <Alert kind="info">Удостоверение сразу появится у всех сотрудников со статусом «Не заполнено».</Alert>
+      )}
+      {save.error && !Object.values(form.errors).some(Boolean) ? <Alert>{errorMessage(save.error)}</Alert> : null}
     </Dialog>
   );
 }
 
 export function CatalogPage() {
-  const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [dialog, setDialog] = useState<{ open: boolean; item: CatalogItemDto | null }>({ open: false, item: null });
   const [archiveTarget, setArchiveTarget] = useState<CatalogItemDto | null>(null);
 
-  const { data = [] } = useQuery({
-    queryKey: ['admin', 'catalog', showArchived],
-    queryFn: () => api.get<CatalogItemDto[]>('/admin/catalog', { params: { archived: showArchived } }).then((r) => r.data),
-  });
+  const { data = [], error } = useQuery(`admin:catalog:${showArchived ? 'all' : 'active'}`, () =>
+    api.get<CatalogItemDto[]>('/admin/catalog', { archived: showArchived }),
+  );
 
-  const toggleArchive = useMutation({
-    mutationFn: (item: CatalogItemDto) => api.post(`/admin/catalog/${item.id}/${item.isArchived ? 'unarchive' : 'archive'}`),
+  const toggle = useAction((item: CatalogItemDto) => api.post(`/admin/catalog/${item.id}/${item.isArchived ? 'unarchive' : 'archive'}`), {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin'] });
+      invalidate('admin');
       setArchiveTarget(null);
     },
   });
@@ -119,74 +79,72 @@ export function CatalogPage() {
         subtitle="Перечень удостоверений и сроки их действия"
         actions={
           <>
-            <FormControlLabel control={<Switch checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />} label="Показать архив" />
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialog({ open: true, item: null })}>
-              Добавить
-            </Button>
+            <Checkbox label="Показать архив" checked={showArchived} onChange={setShowArchived} />
+            <button type="button" className="btn btn-primary" onClick={() => setDialog({ open: true, item: null })}>
+              <Icon name="add" small /> Добавить
+            </button>
           </>
         }
       />
-      <Paper>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Название</TableCell>
-                <TableCell>Срок действия</TableCell>
-                <TableCell>Порядок</TableCell>
-                <TableCell align="right" />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {data.map((item) => (
-                <TableRow key={item.id} hover sx={{ opacity: item.isArchived ? 0.55 : 1 }}>
-                  <TableCell>
-                    {item.name} {item.isArchived && <Chip size="small" label="В архиве" sx={{ ml: 1 }} />}
-                  </TableCell>
-                  <TableCell>{formatValidity(item.validityMonths)}</TableCell>
-                  <TableCell>{item.sortOrder}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                    <Tooltip title="Изменить">
-                      <IconButton size="small" onClick={() => setDialog({ open: true, item })}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title={item.isArchived ? 'Вернуть из архива' : 'В архив'}>
-                      <IconButton size="small" onClick={() => setArchiveTarget(item)}>
-                        {item.isArchived ? <UnarchiveIcon fontSize="small" /> : <ArchiveIcon fontSize="small" />}
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {data.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    Справочник пуст. Добавьте первое удостоверение.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+      {error && <Alert>{error}</Alert>}
+      <div className="panel table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>Срок действия</th>
+              <th>Порядок</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item) => (
+              <tr key={item.id} className={item.isArchived ? 'dimmed' : ''}>
+                <td>
+                  {item.name} {item.isArchived && <span className="chip small">В архиве</span>}
+                </td>
+                <td>{formatValidity(item.validityMonths)}</td>
+                <td>{item.sortOrder}</td>
+                <td className="actions">
+                  <button type="button" className="icon-btn" title="Изменить" aria-label="Изменить" onClick={() => setDialog({ open: true, item })}>
+                    <Icon name="edit" />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={item.isArchived ? 'Вернуть из архива' : 'В архив'}
+                    aria-label={item.isArchived ? 'Вернуть из архива' : 'В архив'}
+                    onClick={() => {
+                      toggle.reset();
+                      setArchiveTarget(item);
+                    }}
+                  >
+                    <Icon name={item.isArchived ? 'unarchive' : 'archive'} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {data.length === 0 && <div className="empty">Справочник пуст. Добавьте первое удостоверение.</div>}
+      </div>
       <ItemDialog open={dialog.open} item={dialog.item} onClose={() => setDialog({ open: false, item: null })} />
       <ConfirmDialog
         open={!!archiveTarget}
         title={archiveTarget?.isArchived ? 'Вернуть из архива?' : 'Переместить в архив?'}
         text={
-          toggleArchive.isError
-            ? errorMessage(toggleArchive.error)
-            : archiveTarget?.isArchived
-              ? `«${archiveTarget.name}» снова появится у всех сотрудников.`
-              : `«${archiveTarget?.name}» пропадёт у всех сотрудников из списков и статистики. Введённые данные сохранятся.`
+          archiveTarget?.isArchived
+            ? `«${archiveTarget.name}» снова появится у всех сотрудников.`
+            : `«${archiveTarget?.name}» пропадёт у всех сотрудников из списков и статистики. Введённые данные сохранятся.`
         }
         confirmText={archiveTarget?.isArchived ? 'Вернуть' : 'В архив'}
         danger={!archiveTarget?.isArchived}
-        loading={toggleArchive.isPending}
-        onConfirm={() => archiveTarget && toggleArchive.mutate(archiveTarget)}
+        disabled={toggle.pending}
+        onConfirm={() => archiveTarget && toggle.run(archiveTarget)}
         onClose={() => setArchiveTarget(null)}
-      />
+      >
+        {toggle.error ? <Alert>{errorMessage(toggle.error)}</Alert> : null}
+      </ConfirmDialog>
     </>
   );
 }

@@ -1,68 +1,58 @@
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useMutation } from '@tanstack/react-query';
 import { updateProfileSchema, type UserDto } from '@app/shared';
-import { api, errorMessage } from '../../api/client';
-import { useAuth, useCurrentUser } from '../../auth/AuthContext';
-import { PageHeader } from '../../components/PageHeader';
-import { ROLE_LABELS } from '../../utils';
-
-interface Form {
-  phone: string;
-  email: string;
-}
+import { api, errorMessage } from '../../api.ts';
+import { useAuth, useCurrentUser } from '../../auth.tsx';
+import { Alert, PageHeader, TextField } from '../../components/ui.tsx';
+import { useAction } from '../../data.ts';
+import { useForm } from '../../form.ts';
+import { ROLE_LABELS } from '../../utils.ts';
 
 function ReadOnly({ label, value }: { label: string; value: string | null }) {
   return (
-    <Box>
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography>{value || '—'}</Typography>
-    </Box>
+    <div>
+      <div className="muted small">{label}</div>
+      <div>{value || '—'}</div>
+    </div>
   );
 }
 
 export function ProfilePage() {
   const user = useCurrentUser();
   const { setUser } = useAuth();
-  const { register, handleSubmit, formState } = useForm<Form>({
-    resolver: zodResolver(updateProfileSchema),
-    defaultValues: { phone: user.phone ?? '', email: user.email ?? '' },
-  });
-  const mutation = useMutation({
-    mutationFn: (data: Form) => api.patch<UserDto>('/me', data).then((r) => r.data),
+  const form = useForm({ phone: user.phone ?? '', email: user.email ?? '' });
+  const save = useAction((data: unknown) => api.patch<UserDto>('/me', data), {
     onSuccess: setUser,
+    onError: (err) => form.applyServerErrors(err),
   });
 
   return (
     <>
       <PageHeader title="Профиль" />
-      <Paper sx={{ p: 3, maxWidth: 560 }}>
-        <Stack spacing={2}>
-          <ReadOnly label="ФИО" value={user.fullName} />
-          <ReadOnly label="Логин" value={user.login} />
-          <ReadOnly label="Роль" value={ROLE_LABELS[user.role]} />
-          <ReadOnly label="Должность" value={user.position} />
-          <Typography variant="caption" color="text.secondary">
-            ФИО и должность меняет администратор.
-          </Typography>
-          <form onSubmit={handleSubmit((d) => mutation.mutate(d))} noValidate>
-            <Stack spacing={2}>
-              <TextField label="Телефон" {...register('phone')} error={!!formState.errors.phone} helperText={formState.errors.phone?.message} />
-              <TextField label="Email" type="email" {...register('email')} error={!!formState.errors.email} helperText={formState.errors.email?.message} />
-              {mutation.isSuccess && <Alert severity="success">Сохранено</Alert>}
-              {mutation.isError && <Alert severity="error">{errorMessage(mutation.error)}</Alert>}
-              <Box>
-                <Button type="submit" variant="contained" disabled={mutation.isPending}>
-                  Сохранить
-                </Button>
-              </Box>
-            </Stack>
-          </form>
-        </Stack>
-      </Paper>
+      <div className="panel pad-lg stack" style={{ maxWidth: 560 }}>
+        <ReadOnly label="ФИО" value={user.fullName} />
+        <ReadOnly label="Логин" value={user.login} />
+        <ReadOnly label="Роль" value={ROLE_LABELS[user.role]} />
+        <ReadOnly label="Должность" value={user.position} />
+        <div className="muted small">ФИО и должность меняет администратор.</div>
+        <form
+          noValidate
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = form.validate(updateProfileSchema);
+            if (data) save.run(form.values);
+          }}
+        >
+          <TextField label="Телефон" {...form.field('phone')} />
+          <TextField label="Email" type="email" {...form.field('email')} />
+          {save.done && <Alert kind="success">Сохранено</Alert>}
+          {save.error && !form.errors.phone && !form.errors.email ? <Alert>{errorMessage(save.error)}</Alert> : null}
+          <div>
+            <button type="submit" className="btn btn-primary" disabled={save.pending}>
+              Сохранить
+            </button>
+          </div>
+        </form>
+      </div>
     </>
   );
 }

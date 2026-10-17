@@ -1,21 +1,21 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Role, User } from '@prisma/client';
-import { prisma } from '../db';
-import { forbidden, unauthorized } from '../utils/errors';
-import { asyncHandler } from '../utils/asyncHandler';
-import { verifyAccessToken } from '../services/token.service';
+import { prisma, withPosition, type UserWithPosition } from '../db.ts';
+import { forbidden, unauthorized } from '../utils/errors.ts';
+import { asyncHandler } from '../utils/asyncHandler.ts';
+import { verifyAccessToken } from '../services/token.service.ts';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      user?: User;
+      user?: UserWithPosition;
     }
   }
 }
 
 /** Пользователь, проверенный middleware authenticate. */
-export function currentUser(req: Request): User {
+export function currentUser(req: Request): UserWithPosition {
   if (!req.user) throw unauthorized();
   return req.user;
 }
@@ -37,7 +37,7 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
   const payload = verifyAccessToken(token);
   if (!payload) throw unauthorized('Сессия истекла');
 
-  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: withPosition });
   if (!isUsable(user) || user.tokenVersion !== payload.ver) throw unauthorized('Сессия недействительна');
 
   req.user = user;

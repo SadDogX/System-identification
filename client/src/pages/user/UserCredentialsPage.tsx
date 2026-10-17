@@ -1,53 +1,78 @@
 import { useState } from 'react';
-import { Alert, Button, Paper } from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import { useQuery } from '@tanstack/react-query';
 import type { UserCredentialDto } from '@app/shared';
-import { api } from '../../api/client';
-import { CredentialView, ViewToggle } from '../../components/CredentialViews';
-import { PageHeader } from '../../components/PageHeader';
-import { UserCredentialDialog } from '../../components/UserCredentialDialog';
-import { useViewMode } from '../../hooks/useViewMode';
+import { api, errorMessage } from '../../api.ts';
+import { CredentialView, ViewToggle, useViewMode } from '../../components/CredentialViews.tsx';
+import { Icon } from '../../components/Icon.tsx';
+import { PhotoButton } from '../../components/Photo.tsx';
+import { UserCredentialDialog } from '../../components/UserCredentialDialog.tsx';
+import { Alert, ConfirmDialog, PageHeader } from '../../components/ui.tsx';
+import { invalidate, useAction, useQuery } from '../../data.ts';
 
-export const useOwnCredentials = () =>
-  useQuery({
-    queryKey: ['me', 'credentials'],
-    queryFn: () => api.get<UserCredentialDto[]>('/me/credentials').then((r) => r.data),
-  });
+export const useOwnCredentials = () => useQuery('me:credentials', () => api.get<UserCredentialDto[]>('/me/credentials'));
 
 export function UserCredentialsPage() {
   const [mode, setMode, isMobile] = useViewMode();
-  const { data = [], isError } = useOwnCredentials();
-  const [dialog, setDialog] = useState<{ open: boolean; id: number | null }>({ open: false, id: null });
+  const { data = [], error } = useOwnCredentials();
+  const [editId, setEditId] = useState<number | null>(null);
+  const [clearTarget, setClearTarget] = useState<UserCredentialDto | null>(null);
+
+  const clear = useAction((item: UserCredentialDto) => api.post(`/me/credentials/${item.id}/clear`), {
+    onSuccess: () => {
+      invalidate('me');
+      setClearTarget(null);
+    },
+  });
+
+  // Диалог берёт актуальную запись из списка — после загрузки фото она обновляется
+  const editing = data.find((c) => c.id === editId) ?? null;
 
   return (
     <>
       <PageHeader
         title="Мои удостоверения"
-        subtitle="Укажите дату выдачи — дата окончания рассчитается по сроку из справочника"
-        actions={
-          <>
-            <ViewToggle value={mode} onChange={setMode} hidden={isMobile} />
-            <Button variant="contained" startIcon={<EditIcon />} onClick={() => setDialog({ open: true, id: null })} disabled={!data.length}>
-              Внести данные
-            </Button>
-          </>
-        }
+        subtitle="Укажите дату выдачи и приложите фото — дата окончания рассчитается по сроку из справочника"
+        actions={<ViewToggle value={mode} onChange={setMode} hidden={isMobile} />}
       />
-      {isError && <Alert severity="error">Не удалось загрузить удостоверения</Alert>}
-      <Paper sx={{ p: mode === 'cards' ? 2 : 0, ...(mode === 'cards' && { bgcolor: 'transparent', border: 'none', p: 0 }) }}>
-        <CredentialView
-          mode={mode}
-          items={data}
-          emptyText="Администратор ещё не добавил удостоверения в справочник"
-          actions={(item) => (
-            <Button size="small" startIcon={<EditIcon />} onClick={() => setDialog({ open: true, id: item.id })}>
-              {item.issueDate ? 'Изменить' : 'Заполнить'}
-            </Button>
-          )}
-        />
-      </Paper>
-      <UserCredentialDialog open={dialog.open} initialId={dialog.id} credentials={data} onClose={() => setDialog({ open: false, id: null })} />
+      {error && <Alert>Не удалось загрузить удостоверения</Alert>}
+      <CredentialView
+        mode={mode}
+        items={data}
+        emptyText="Администратор ещё не добавил удостоверения в справочник"
+        actions={(item) => (
+          <>
+            <PhotoButton item={item} />
+            <button type="button" className="btn btn-sm" onClick={() => setEditId(item.id)}>
+              <Icon name="edit" small /> {item.issueDate ? 'Изменить' : 'Заполнить'}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Очистить данные удостоверения"
+              aria-label="Очистить данные удостоверения"
+              disabled={!item.issueDate && !item.number && !item.photoMime}
+              onClick={() => {
+                clear.reset();
+                setClearTarget(item);
+              }}
+            >
+              <Icon name="clear" />
+            </button>
+          </>
+        )}
+      />
+      <UserCredentialDialog item={editing} onClose={() => setEditId(null)} />
+      <ConfirmDialog
+        open={!!clearTarget}
+        title="Очистить данные удостоверения?"
+        text={`«${clearTarget?.name}»: дата выдачи, дата окончания, номер и фото будут удалены. Удостоверение останется в списке со статусом «Не заполнено».`}
+        confirmText="Очистить"
+        danger
+        disabled={clear.pending}
+        onConfirm={() => clearTarget && clear.run(clearTarget)}
+        onClose={() => setClearTarget(null)}
+      >
+        {clear.error ? <Alert>{errorMessage(clear.error)}</Alert> : null}
+      </ConfirmDialog>
     </>
   );
 }

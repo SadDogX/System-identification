@@ -1,72 +1,70 @@
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { useNavigate } from 'react-router-dom';
-import { Alert, Button, Stack, TextField } from '@mui/material';
-import { useMutation } from '@tanstack/react-query';
 import { changePasswordSchema, type AuthResponse } from '@app/shared';
-import { api, errorDetails, errorMessage } from '../api/client';
-import { homePath, useAuth, useCurrentUser } from '../auth/AuthContext';
-import { AuthCard } from './LoginPage';
-
-const formSchema = changePasswordSchema
-  .extend({ confirm: z.string() })
-  .refine((v) => v.newPassword === v.confirm, { message: 'Пароли не совпадают', path: ['confirm'] });
-type Form = z.infer<typeof formSchema>;
+import { api, errorMessage } from '../api.ts';
+import { homePath, useAuth, useCurrentUser } from '../auth.tsx';
+import { Alert, PasswordField } from '../components/ui.tsx';
+import { useAction } from '../data.ts';
+import { useForm } from '../form.ts';
+import { useRouter } from '../router.tsx';
+import { AuthCard } from './LoginPage.tsx';
 
 export function ChangePasswordPage() {
   const user = useCurrentUser();
   const { applySession, logout } = useAuth();
-  const navigate = useNavigate();
-  const { register, handleSubmit, formState, setError } = useForm<Form>({ resolver: zodResolver(formSchema) });
+  const { navigate } = useRouter();
+  const form = useForm({ currentPassword: '', newPassword: '', confirm: '' });
 
-  const mutation = useMutation({
-    mutationFn: ({ currentPassword, newPassword }: Form) =>
-      api.post<AuthResponse>('/auth/change-password', { currentPassword, newPassword }).then((r) => r.data),
-    onSuccess: (session) => {
-      applySession(session);
-      navigate(homePath(session.user), { replace: true });
+  const save = useAction(
+    (data: { currentPassword: string; newPassword: string }) => api.post<AuthResponse>('/auth/change-password', data),
+    {
+      onSuccess: (session) => {
+        applySession(session);
+        navigate(homePath(session.user), { replace: true });
+      },
+      onError: (err) => form.applyServerErrors(err),
     },
-    onError: (e) => {
-      for (const [field, message] of Object.entries(errorDetails(e))) setError(field as keyof Form, { message });
-    },
-  });
-
-  const field = (name: keyof Form, label: string, autoComplete: string) => (
-    <TextField
-      label={label}
-      type="password"
-      autoComplete={autoComplete}
-      {...register(name)}
-      error={!!formState.errors[name]}
-      helperText={formState.errors[name]?.message}
-    />
   );
+
+  const submit = () => {
+    const data = form.validate(changePasswordSchema);
+    if (!data) return;
+    if (form.values.newPassword !== form.values.confirm) {
+      form.setErrors({ confirm: 'Пароли не совпадают' });
+      return;
+    }
+    save.run(data);
+  };
 
   return (
     <AuthCard title={user.mustChangePassword ? 'Задайте постоянный пароль' : 'Смена пароля'}>
       {user.mustChangePassword && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Вы вошли с временным паролем. Придумайте новый, чтобы продолжить работу.
-        </Alert>
+        <div className="mb">
+          <Alert kind="info">Вы вошли с временным паролем. Придумайте новый, чтобы продолжить работу.</Alert>
+        </div>
       )}
-      <form onSubmit={handleSubmit((data) => mutation.mutate(data))} noValidate>
-        <Stack spacing={2}>
-          {field('currentPassword', 'Текущий пароль', 'current-password')}
-          {field('newPassword', 'Новый пароль (не менее 8 символов)', 'new-password')}
-          {field('confirm', 'Повторите новый пароль', 'new-password')}
-          {mutation.isError && !Object.keys(errorDetails(mutation.error)).length && (
-            <Alert severity="error">{errorMessage(mutation.error)}</Alert>
-          )}
-          <Button type="submit" variant="contained" disabled={mutation.isPending}>
-            Сохранить пароль
-          </Button>
-          {user.mustChangePassword ? (
-            <Button onClick={() => logout().then(() => navigate('/login'))}>Выйти</Button>
-          ) : (
-            <Button onClick={() => navigate(-1)}>Назад</Button>
-          )}
-        </Stack>
+      <form
+        noValidate
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <PasswordField label="Текущий пароль" autoComplete="current-password" {...form.field('currentPassword')} />
+        <PasswordField label="Новый пароль (не менее 8 символов)" autoComplete="new-password" {...form.field('newPassword')} />
+        <PasswordField label="Повторите новый пароль" autoComplete="new-password" {...form.field('confirm')} />
+        {save.error && Object.keys(form.errors).every((k) => !form.errors[k]) ? <Alert>{errorMessage(save.error)}</Alert> : null}
+        <button type="submit" className="btn btn-primary" disabled={save.pending}>
+          Сохранить пароль
+        </button>
+        {user.mustChangePassword ? (
+          <button type="button" className="btn" onClick={() => logout().then(() => navigate('/login'))}>
+            Выйти
+          </button>
+        ) : (
+          <button type="button" className="btn" onClick={() => window.history.back()}>
+            Назад
+          </button>
+        )}
       </form>
     </AuthCard>
   );

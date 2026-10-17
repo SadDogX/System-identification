@@ -1,19 +1,16 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { changePasswordSchema, loginRequestSchema } from '@app/shared';
-import { config } from '../config';
-import { authenticate } from '../middleware/auth';
-import { validate } from '../middleware/validate';
-import { asyncHandler } from '../utils/asyncHandler';
-import * as auth from '../controllers/auth.controller';
+import { config } from '../config.ts';
+import { authenticate } from '../middleware/auth.ts';
+import { failedAttemptsLimiter } from '../middleware/http.ts';
+import { validate } from '../middleware/validate.ts';
+import { asyncHandler } from '../utils/asyncHandler.ts';
+import * as auth from '../controllers/auth.controller.ts';
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const loginLimiter = failedAttemptsLimiter({
   limit: config.isTest ? 1000 : 10,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-  message: { error: 'Слишком много попыток входа. Повторите через 15 минут' },
+  windowMs: 15 * 60 * 1000,
+  message: 'Слишком много попыток входа. Повторите через 15 минут',
 });
 
 export const authRouter = Router();

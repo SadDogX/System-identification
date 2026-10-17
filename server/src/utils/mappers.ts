@@ -1,27 +1,30 @@
 import type { Credential, User, UserCredential } from '@prisma/client';
 import {
   getCredentialStatus,
+  parse,
   uiSettingsSchema,
   type StatusThresholds,
   type UserCredentialDto,
   type UserDto,
 } from '@app/shared';
-import { fromDbDate } from './dates';
+import { fromDbDate } from './dates.ts';
+import type { UserWithPosition } from '../db.ts';
 
 /** Пароль и служебные поля в ответ API не попадают. */
-export function toUserDto(user: User): UserDto {
-  const ui = uiSettingsSchema.safeParse(user.uiSettings ?? {});
+export function toUserDto(user: UserWithPosition): UserDto {
+  const ui = parse(uiSettingsSchema, user.uiSettings ?? {});
   return {
     id: user.id,
     fullName: user.fullName,
     login: user.login,
     role: user.role,
-    position: user.position,
+    positionId: user.positionId,
+    position: user.position?.name ?? null,
     phone: user.phone,
     email: user.email,
     isActive: user.isActive,
     mustChangePassword: user.mustChangePassword,
-    uiSettings: ui.success ? ui.data : {},
+    uiSettings: ui.ok ? ui.value : {},
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -49,6 +52,7 @@ export function toUserCredentialDto(
     expiryDate,
     comment: row.comment,
     isMarkedForDeletion: row.isMarkedForDeletion,
+    photoMime: row.photoFile ? row.photoMime : null,
     status,
     daysLeft,
     updatedAt: row.updatedAt.toISOString(),

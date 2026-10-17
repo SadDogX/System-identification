@@ -23,9 +23,9 @@ model User {
   fullName           String   @db.VarChar(200)
   // Логин остаётся занятым и после мягкого удаления пользователя
   login              String   @unique @db.VarChar(50)
-  passwordHash       String   @db.VarChar(100)
+  passwordHash       String   @db.VarChar(255)
   role               Role     @default(USER)
-  position           String?  @db.VarChar(150)
+  positionId         Int?
   phone              String?  @db.VarChar(50)
   email              String?  @db.VarChar(150)
   isActive           Boolean  @default(true)
@@ -37,6 +37,7 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  position           Position?        @relation(fields: [positionId], references: [id])
   credentials        UserCredential[] @relation("CredentialOwner")
   updatedCredentials UserCredential[] @relation("CredentialEditor")
   notifications      Notification[]
@@ -45,6 +46,18 @@ model User {
   auditAsTarget      AuditLog[]       @relation("AuditTarget")
 
   @@index([role, isDeleted])
+}
+
+/// Справочник должностей
+model Position {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique @db.VarChar(150)
+  sortOrder  Int      @default(0)
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users User[]
 }
 
 /// Справочник удостоверений: название и срок действия
@@ -71,6 +84,9 @@ model UserCredential {
   expiryDate          DateTime? @db.Date
   comment             String?   @db.Text
   isMarkedForDeletion Boolean   @default(false)
+  // Фото или скан удостоверения: имя файла в каталоге uploads и его MIME-тип
+  photoFile           String?   @db.VarChar(100)
+  photoMime           String?   @db.VarChar(50)
   updatedById         Int?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -85,18 +101,20 @@ model UserCredential {
 
 /// Уведомления и входящие сообщения. Для сообщения строка = получатель
 model Notification {
-  id        Int              @id @default(autoincrement())
-  userId    Int
-  kind      NotificationKind
-  level     String?          @db.VarChar(10)
-  title     String           @db.VarChar(300)
-  body      String           @db.Text
-  link      String?          @db.VarChar(300)
-  messageId Int?
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  kind        NotificationKind
+  level       String?          @db.VarChar(10)
+  title       String           @db.VarChar(300)
+  body        String           @db.Text
+  link        String?          @db.VarChar(300)
+  messageId   Int?
   // Защита от дублей автоуведомлений
-  dedupKey  String?          @unique @db.VarChar(191)
-  readAt    DateTime?
-  createdAt DateTime         @default(now())
+  dedupKey    String?          @unique @db.VarChar(191)
+  readAt      DateTime?
+  // Пользователь убрал уведомление из списка (запись остаётся для статистики прочтений)
+  dismissedAt DateTime?
+  createdAt   DateTime         @default(now())
 
   user    User     @relation(fields: [userId], references: [id])
   message Message? @relation(fields: [messageId], references: [id])

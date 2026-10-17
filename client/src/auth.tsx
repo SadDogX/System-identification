@@ -1,14 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_THRESHOLDS,
   DEFAULT_TIMEZONE,
   type AppSettingsDto,
   type AuthResponse,
   type LoginRequest,
+  type Role,
   type UserDto,
 } from '@app/shared';
-import { api, refreshSession, setAccessToken, setSessionHandlers } from '../api/client';
+import { api, refreshSession, setAccessToken, setSessionHandlers } from './api.ts';
+import { Redirect, useRouter } from './router.tsx';
+import { Spinner } from './components/ui.tsx';
 
 interface AuthState {
   user: UserDto | null;
@@ -26,7 +28,6 @@ const AuthContext = createContext<AuthState | null>(null);
 const DEFAULT_SETTINGS: AppSettingsDto = { ...DEFAULT_THRESHOLDS, timezone: DEFAULT_TIMEZONE };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const queryClient = useQueryClient();
   const [user, setUser] = useState<UserDto | null>(null);
   const [settings, setSettings] = useState<AppSettingsDto>(DEFAULT_SETTINGS);
   const [initializing, setInitializing] = useState(true);
@@ -40,8 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(() => {
     setAccessToken(null);
     setUser(null);
-    queryClient.clear();
-  }, [queryClient]);
+  }, []);
 
   useEffect(() => {
     setSessionHandlers({ expired: clearSession, refreshed: applySession });
@@ -53,12 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (data: LoginRequest) => {
-      const res = await api.post<AuthResponse>('/auth/login', data);
-      queryClient.clear();
-      applySession(res.data);
-      return res.data.user;
+      const session = await api.post<AuthResponse>('/auth/login', data);
+      applySession(session);
+      return session.user;
     },
-    [applySession, queryClient],
+    [applySession],
   );
 
   const logout = useCallback(async () => {
@@ -87,3 +86,15 @@ export function useCurrentUser(): UserDto {
 }
 
 export const homePath = (user: UserDto) => (user.role === 'ADMIN' ? '/admin/dashboard' : '/user/dashboard');
+
+/** Только UX: реальная проверка прав выполняется на сервере. */
+export function Protected({ role, children }: { role?: Role; children: ReactNode }) {
+  const { user, initializing } = useAuth();
+  const { path } = useRouter();
+
+  if (initializing) return <Spinner />;
+  if (!user) return <Redirect to="/login" />;
+  if (user.mustChangePassword && path !== '/change-password') return <Redirect to="/change-password" />;
+  if (role && user.role !== role) return <Redirect to={homePath(user)} />;
+  return <>{children}</>;
+}

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../src/utils/password.ts';
 
 const prisma = new PrismaClient();
 
@@ -20,7 +20,7 @@ async function main() {
       data: {
         fullName: 'Администратор',
         login,
-        passwordHash: await bcrypt.hash(password, 10),
+        passwordHash: await hashPassword(password),
         role: 'ADMIN',
         // Временный пароль из .env — сменить при первом входе
         mustChangePassword: true,

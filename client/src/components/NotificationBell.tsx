@@ -1,124 +1,122 @@
 import { useState } from 'react';
-import {
-  Badge,
-  Box,
-  Button,
-  Divider,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Popover,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import MailIcon from '@mui/icons-material/Mail';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import type { NotificationDto, Paginated } from '@app/shared';
-import { api } from '../api/client';
-import { useCurrentUser } from '../auth/AuthContext';
-import { formatDateTime } from '../utils';
-import { StatusIcon } from './StatusBadge';
+import { api } from '../api.ts';
+import { useCurrentUser } from '../auth.tsx';
+import { invalidate, useQuery } from '../data.ts';
+import { useRouter } from '../router.tsx';
+import { formatDateTime } from '../utils.ts';
+import { Icon } from './Icon.tsx';
+import { StatusIcon } from './StatusBadge.tsx';
+import { useClickOutside } from './ui.tsx';
 
 export function NotificationIcon({ n }: { n: NotificationDto }) {
-  if (n.kind === 'MESSAGE') return <MailIcon fontSize="small" color="primary" />;
+  if (n.kind === 'MESSAGE') return <Icon name="mail" className="c-blue" />;
   return <StatusIcon status={n.level ?? 'YELLOW'} />;
 }
 
-export function useNotificationMutations() {
-  const queryClient = useQueryClient();
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['notifications'] });
-  const markRead = useMutation({ mutationFn: (id: number) => api.patch(`/me/notifications/${id}/read`), onSuccess: invalidate });
-  const markAll = useMutation({ mutationFn: () => api.post('/me/notifications/read-all'), onSuccess: invalidate });
-  return { markRead, markAll };
+export async function markRead(n: NotificationDto) {
+  if (n.readAt) return;
+  await api.patch(`/me/notifications/${n.id}/read`);
+  invalidate('notifications');
+}
+
+export async function markAllRead() {
+  await api.post('/me/notifications/read-all');
+  invalidate('notifications');
+}
+
+/** Убрать прочитанные из списка. */
+export async function dismissRead() {
+  await api.post('/me/notifications/dismiss-read');
+  invalidate('notifications');
 }
 
 export function NotificationBell() {
   const user = useCurrentUser();
-  const navigate = useNavigate();
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const { markRead, markAll } = useNotificationMutations();
+  const { navigate } = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useClickOutside(open, () => setOpen(false));
 
   // Счётчик непрочитанных обновляется раз в минуту
-  const unread = useQuery({
-    queryKey: ['notifications', 'unread'],
-    queryFn: () => api.get<{ count: number }>('/me/notifications/unread-count').then((r) => r.data.count),
-    refetchInterval: 60_000,
+  const unread = useQuery('notifications:unread', () => api.get<{ count: number }>('/me/notifications/unread-count'), {
+    refreshMs: 60_000,
   });
-  const latest = useQuery({
-    queryKey: ['notifications', 'latest'],
-    queryFn: () => api.get<Paginated<NotificationDto>>('/me/notifications?pageSize=8').then((r) => r.data.items),
-    enabled: !!anchor,
-  });
+  const latest = useQuery(open ? 'notifications:latest' : null, () =>
+    api.get<Paginated<NotificationDto>>('/me/notifications', { pageSize: 8 }),
+  );
 
   const allPath = user.role === 'ADMIN' ? '/admin/notifications' : '/user/notifications';
+  const count = unread.data?.count ?? 0;
 
-  const open = (n: NotificationDto) => {
-    if (!n.readAt) markRead.mutate(n.id);
-    setAnchor(null);
+  const go = (n: NotificationDto) => {
+    markRead(n).catch(() => {});
+    setOpen(false);
     navigate(n.link ?? allPath);
   };
 
   return (
-    <>
-      <Tooltip title="Уведомления">
-        <IconButton color="inherit" onClick={(e) => setAnchor(e.currentTarget)}>
-          <Badge badgeContent={unread.data ?? 0} color="error" max={99}>
-            <NotificationsIcon />
-          </Badge>
-        </IconButton>
-      </Tooltip>
-      <Popover
-        open={!!anchor}
-        anchorEl={anchor}
-        onClose={() => setAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { width: 380, maxWidth: 'calc(100vw - 32px)' } } }}
-      >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 1.5 }}>
-          <Typography fontWeight={600}>Уведомления</Typography>
-          <Button size="small" disabled={!unread.data} onClick={() => markAll.mutate()}>
-            Отметить все как прочитанные
-          </Button>
-        </Stack>
-        <Divider />
-        <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto' }}>
-          {latest.data?.length === 0 && (
-            <Typography color="text.secondary" sx={{ p: 3, textAlign: 'center' }}>
-              Уведомлений нет
-            </Typography>
-          )}
-          {latest.data?.map((n) => (
-            <ListItemButton key={n.id} onClick={() => open(n)} sx={{ alignItems: 'flex-start', bgcolor: n.readAt ? undefined : 'action.hover' }}>
-              <ListItemIcon sx={{ minWidth: 32, mt: 0.5 }}>
+    <div className="anchor" ref={ref}>
+      <button type="button" className={`icon-btn lg${count > 0 ? ' alert' : ''}`} title="Уведомления" aria-label={`Уведомления, непрочитанных: ${count}`} onClick={() => setOpen((v) => !v)}>
+        <Icon name="bell" />
+        {count > 0 && <span className="count-badge">{count > 99 ? '99+' : count}</span>}
+      </button>
+      {open && (
+        <div className="popover">
+          <div className="popover-head notif-head">
+            <div className="row">
+              <span className="bold">Уведомления</span>
+              {count > 0 && <span className="new-count">{count} новых</span>}
+            </div>
+            <div className="row">
+              <button
+                type="button"
+                className="icon-btn tip"
+                data-tip="Прочитать все"
+                aria-label="Прочитать все"
+                disabled={count === 0}
+                onClick={() => markAllRead().catch(() => {})}
+              >
+                <Icon name="doneAll" />
+              </button>
+              <button
+                type="button"
+                className="icon-btn tip"
+                data-tip="Очистить прочитанные"
+                aria-label="Очистить прочитанные"
+                onClick={() => dismissRead().catch(() => {})}
+              >
+                <Icon name="clearAll" />
+              </button>
+            </div>
+          </div>
+          <div className="popover-body">
+            {latest.data?.items.length === 0 && <div className="empty">Уведомлений нет</div>}
+            {latest.data?.items.map((n) => (
+              <button key={n.id} type="button" className={`note${n.readAt ? '' : ' unread'}`} onClick={() => go(n)}>
                 <NotificationIcon n={n} />
-              </ListItemIcon>
-              <ListItemText
-                primary={n.title}
-                secondary={formatDateTime(n.createdAt)}
-                primaryTypographyProps={{ fontWeight: n.readAt ? 400 : 600, fontSize: 14 }}
-              />
-            </ListItemButton>
-          ))}
-        </List>
-        <Divider />
-        <Box sx={{ p: 1, textAlign: 'center' }}>
-          <Button
-            size="small"
-            onClick={() => {
-              setAnchor(null);
-              navigate(allPath);
-            }}
-          >
-            Все уведомления
-          </Button>
-        </Box>
-      </Popover>
-    </>
+                <span className="grow">
+                  <span className="note-title">{n.title}</span>
+                  <span className="muted small" style={{ display: 'block' }}>
+                    {formatDateTime(n.createdAt)}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="popover-foot">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setOpen(false);
+                navigate(allPath);
+              }}
+            >
+              Все уведомления
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

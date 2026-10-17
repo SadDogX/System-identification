@@ -1,96 +1,89 @@
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import RestoreIcon from '@mui/icons-material/Restore';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addMonths, formatDateRu, isIsoDate, todayInTimezone, type UserCredentialDto } from '@app/shared';
-import { api, errorMessage } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
-import { formatValidity } from '../utils';
-import { ConfirmDialog } from './ConfirmDialog';
+import { api, errorMessage } from '../api.ts';
+import { useAuth } from '../auth.tsx';
+import { invalidate, useAction } from '../data.ts';
+import { formatValidity } from '../utils.ts';
+import { Icon } from './Icon.tsx';
+import { PhotoButton, PhotoField } from './Photo.tsx';
+import { Alert, ConfirmDialog, Dialog, TextArea, TextField } from './ui.tsx';
 
-type Pending = { kind: 'edit' | 'clear' | 'mark' | 'unmark'; item: UserCredentialDto } | null;
+type Kind = 'clear' | 'mark' | 'unmark';
+type Pending = { kind: 'edit' | Kind; item: UserCredentialDto } | null;
 
 function EditDialog({ item, onClose }: { item: UserCredentialDto | null; onClose: () => void }) {
   const { settings } = useAuth();
-  const queryClient = useQueryClient();
   const today = todayInTimezone(settings.timezone);
   const [number, setNumber] = useState('');
   const [comment, setComment] = useState('');
   const [issueDate, setIssueDate] = useState('');
+
+  const save = useAction(
+    () =>
+      api.patch(`/admin/credentials/${item!.id}`, {
+        number,
+        comment,
+        ...(issueDate && issueDate !== item!.issueDate && { issueDate }),
+      }),
+    {
+      onSuccess: () => {
+        invalidate('admin');
+        onClose();
+      },
+    },
+  );
 
   useEffect(() => {
     if (!item) return;
     setNumber(item.number ?? '');
     setComment(item.comment ?? '');
     setIssueDate(item.issueDate ?? '');
+    save.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item]);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.patch(`/admin/credentials/${item!.id}`, {
-        number,
-        comment,
-        ...(issueDate && issueDate !== item!.issueDate && { issueDate }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin'] });
-      onClose();
-    },
-  });
 
   const dateInvalid = !!issueDate && (!isIsoDate(issueDate) || issueDate > today);
   const expiry = item && issueDate && !dateInvalid ? addMonths(issueDate, item.validityMonths) : null;
 
   return (
-    <Dialog open={!!item} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{item?.name}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2.5} sx={{ pt: 1 }}>
-          {item?.user && <Typography color="text.secondary">{item.user.fullName}</Typography>}
-          <TextField label="Номер удостоверения" value={number} onChange={(e) => setNumber(e.target.value)} />
-          <TextField
-            type="date"
-            label="Дата выдачи"
-            value={issueDate}
-            onChange={(e) => setIssueDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            inputProps={{ max: today }}
-            error={dateInvalid}
-            helperText={dateInvalid ? 'Дата выдачи не может быть в будущем' : item && `Срок действия: ${formatValidity(item.validityMonths)}`}
-          />
-          <Typography variant="body2">
-            Действительно до: <b>{formatDateRu(expiry)}</b>
-          </Typography>
-          <TextField label="Комментарий" value={comment} onChange={(e) => setComment(e.target.value)} multiline minRows={2} />
-          {mutation.isError && <Alert severity="error">{errorMessage(mutation.error)}</Alert>}
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Отмена</Button>
-        <Button variant="contained" disabled={dateInvalid || mutation.isPending} onClick={() => mutation.mutate()}>
-          Сохранить
-        </Button>
-      </DialogActions>
+    <Dialog
+      open={!!item}
+      title={item?.name ?? ''}
+      onClose={onClose}
+      onSubmit={() => !dateInvalid && save.run()}
+      actions={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={dateInvalid || save.pending}>
+            Сохранить
+          </button>
+        </>
+      }
+    >
+      {item?.user && <div className="muted">{item.user.fullName}</div>}
+      <TextField label="Номер удостоверения" value={number} onChange={(e) => setNumber(e.target.value)} />
+      <TextField
+        type="date"
+        label="Дата выдачи"
+        value={issueDate}
+        max={today}
+        onChange={(e) => setIssueDate(e.target.value)}
+        error={dateInvalid ? 'Дата выдачи не может быть в будущем' : undefined}
+        help={item ? `Срок действия: ${formatValidity(item.validityMonths)}` : undefined}
+      />
+      <div>
+        Действительно до: <b>{formatDateRu(expiry)}</b>
+      </div>
+      {item && <PhotoField item={item} />}
+      <TextArea label="Комментарий" value={comment} onChange={(e) => setComment(e.target.value)} rows={3} />
+      {save.error ? <Alert>{errorMessage(save.error)}</Alert> : null}
     </Dialog>
   );
 }
 
-const CONFIRM = {
+const CONFIRM: Record<Kind, { title: string; text: string; button: string; url: string }> = {
   clear: {
     title: 'Очистить данные удостоверения?',
     text: 'Номер, даты и комментарий будут стёрты. Само удостоверение останется у сотрудника со статусом «Не заполнено».',
@@ -109,50 +102,51 @@ const CONFIRM = {
     button: 'Восстановить',
     url: 'unmark-deletion',
   },
-} as const;
+};
 
 /** Действия администратора над удостоверением: редактирование, очистка, пометка на удаление. */
 export function useAdminCredentialActions() {
-  const queryClient = useQueryClient();
   const [pending, setPending] = useState<Pending>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const action = useMutation({
-    mutationFn: ({ kind, item }: { kind: 'clear' | 'mark' | 'unmark'; item: UserCredentialDto }) =>
-      api.post(`/admin/credentials/${item.id}/${CONFIRM[kind].url}`),
+  const action = useAction((kind: Kind, item: UserCredentialDto) => api.post(`/admin/credentials/${item.id}/${CONFIRM[kind].url}`), {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin'] });
+      invalidate('admin');
       setPending(null);
     },
-    onError: (e) => setError(errorMessage(e)),
   });
+
+  const open = (kind: 'edit' | Kind, item: UserCredentialDto) => {
+    action.reset();
+    setPending({ kind, item });
+  };
 
   const renderActions = (item: UserCredentialDto) =>
     item.isMarkedForDeletion ? (
-      <Tooltip title="Снять пометку на удаление">
-        <IconButton size="small" onClick={() => setPending({ kind: 'unmark', item })}>
-          <RestoreIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <>
+      <PhotoButton item={item} />
+      <button type="button" className="icon-btn" title="Снять пометку на удаление" aria-label="Снять пометку на удаление" onClick={() => open('unmark', item)}>
+        <Icon name="restore" />
+      </button>
+      </>
     ) : (
       <>
-        <Tooltip title="Редактировать">
-          <IconButton size="small" onClick={() => setPending({ kind: 'edit', item })}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Очистить данные">
-          <span>
-            <IconButton size="small" disabled={!item.issueDate && !item.number} onClick={() => setPending({ kind: 'clear', item })}>
-              <BackspaceOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title="Пометить на удаление">
-          <IconButton size="small" onClick={() => setPending({ kind: 'mark', item })}>
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <PhotoButton item={item} />
+        <button type="button" className="icon-btn" title="Редактировать" aria-label="Редактировать" onClick={() => open('edit', item)}>
+          <Icon name="edit" />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          title="Очистить данные"
+          aria-label="Очистить данные"
+          disabled={!item.issueDate && !item.number}
+          onClick={() => open('clear', item)}
+        >
+          <Icon name="clear" />
+        </button>
+        <button type="button" className="icon-btn" title="Пометить на удаление" aria-label="Пометить на удаление" onClick={() => open('mark', item)}>
+          <Icon name="delete" />
+        </button>
       </>
     );
 
@@ -160,20 +154,19 @@ export function useAdminCredentialActions() {
   const dialogs = (
     <>
       <EditDialog item={pending?.kind === 'edit' ? pending.item : null} onClose={() => setPending(null)} />
-      {confirmKind && (
+      {confirmKind && pending && (
         <ConfirmDialog
           open
           title={CONFIRM[confirmKind].title}
-          text={error ?? `${pending!.item.name}${pending!.item.user ? ` — ${pending!.item.user.fullName}` : ''}. ${CONFIRM[confirmKind].text}`}
+          text={`${pending.item.name}${pending.item.user ? ` — ${pending.item.user.fullName}` : ''}. ${CONFIRM[confirmKind].text}`}
           confirmText={CONFIRM[confirmKind].button}
           danger={confirmKind !== 'unmark'}
-          loading={action.isPending}
-          onConfirm={() => action.mutate({ kind: confirmKind, item: pending!.item })}
-          onClose={() => {
-            setPending(null);
-            setError(null);
-          }}
-        />
+          disabled={action.pending}
+          onConfirm={() => action.run(confirmKind, pending.item)}
+          onClose={() => setPending(null)}
+        >
+          {action.error ? <Alert>{errorMessage(action.error)}</Alert> : null}
+        </ConfirmDialog>
       )}
     </>
   );

@@ -5,12 +5,12 @@
  * серверные сервисы — так же, как их выполняли бы админ и сотрудники в интерфейсе.
  */
 import { addDays, addMonths, todayInTimezone } from '@app/shared';
-import { prisma } from '../src/db';
-import * as users from '../src/services/users.service';
-import * as catalog from '../src/services/catalog.service';
-import * as credentials from '../src/services/credentials.service';
-import * as messages from '../src/services/messages.service';
-import { checkExpiryNotifications, createAdminDigest } from '../src/services/notifications.service';
+import { prisma } from '../src/db.ts';
+import * as users from '../src/services/users.service.ts';
+import * as catalog from '../src/services/catalog.service.ts';
+import * as credentials from '../src/services/credentials.service.ts';
+import * as messages from '../src/services/messages.service.ts';
+import { checkExpiryNotifications } from '../src/services/notifications.service.ts';
 
 /** Пароль всех демо-пользователей. */
 export const DEMO_PASSWORD = 'demo12345';
@@ -40,6 +40,12 @@ const EMPLOYEES: {
 
 const NUMBER_PREFIX = ['ОТ', 'ЭБ', 'ПБ', 'МЗ', 'ВР'];
 
+/** Должность из справочника (создаётся, если её ещё нет). */
+async function positionId(name: string): Promise<number> {
+  const row = await prisma.position.upsert({ where: { name }, update: {}, create: { name } });
+  return row.id;
+}
+
 async function main() {
   if (await prisma.user.findUnique({ where: { login: 'ivanov' } })) {
     console.log('Демо-данные уже загружены. Чтобы пересоздать: npm run db:reset && npm run db:demo');
@@ -61,7 +67,7 @@ async function main() {
     login: 'kovaleva',
     password: DEMO_PASSWORD,
     role: 'ADMIN',
-    position: 'Специалист по кадрам',
+    positionId: await positionId('Специалист по кадрам'),
     email: 'kovaleva@example.com',
   });
   await prisma.user.update({ where: { id: admin2.id }, data: { mustChangePassword: false } });
@@ -75,7 +81,7 @@ async function main() {
       login: spec.login,
       password: DEMO_PASSWORD,
       role: 'USER',
-      position: spec.position,
+      positionId: await positionId(spec.position),
       phone: `+7 (900) 000-${String(10 + created.length).padStart(2, '0')}-${String(20 + created.length * 3).padStart(2, '0')}`,
     });
     if (!spec.mustChangePassword) {
@@ -143,9 +149,8 @@ async function main() {
     body: 'Ольга Игоревна, заполните, пожалуйста, даты выдачи ваших удостоверений в разделе «Мои удостоверения».',
   });
 
-  // Уведомления о сроках и сводка администраторам
+  // Уведомления о сроках сотрудникам и копии администраторам
   await checkExpiryNotifications();
-  await createAdminDigest();
 
   // Сидорова уже всё прочитала
   await prisma.notification.updateMany({ where: { userId: byLogin('sidorova') }, data: { readAt: new Date() } });

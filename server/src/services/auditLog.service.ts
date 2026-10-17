@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { AuditLogDto, Paginated } from '@app/shared';
-import { prisma } from '../db';
+import { prisma } from '../db.ts';
 
 const include = {
   actor: { select: { id: true, fullName: true } },

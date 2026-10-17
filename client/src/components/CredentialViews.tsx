@@ -1,39 +1,43 @@
-import type { ReactNode } from 'react';
-import {
-  Box,
-  Card,
-  CardActions,
-  CardContent,
-  Link,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
-import TableRowsIcon from '@mui/icons-material/TableRows';
-import GridViewIcon from '@mui/icons-material/GridView';
-import { Link as RouterLink } from 'react-router-dom';
-import { formatDateRu, type UserCredentialDto, type ViewMode } from '@app/shared';
-import { STATUS_COLORS } from '../theme';
-import { StatusBadge } from './StatusBadge';
+import { useState, type ReactNode } from 'react';
+import { formatDateRu, type UserCredentialDto, type UserDto, type ViewMode } from '@app/shared';
+import { api } from '../api.ts';
+import { useAuth } from '../auth.tsx';
+import { useIsMobile } from '../data.ts';
+import { Link } from '../router.tsx';
+import { Icon } from './Icon.tsx';
+import { StatusBadge } from './StatusBadge.tsx';
+
+/**
+ * Режим «Таблица / Карточки» хранится в настройках пользователя на сервере.
+ * На узком экране всегда карточки — таблица там нечитаема.
+ */
+export function useViewMode(): [ViewMode, (mode: ViewMode) => void, boolean] {
+  const { user, setUser } = useAuth();
+  const isMobile = useIsMobile();
+  const [local, setLocal] = useState<ViewMode>(user?.uiSettings.credentialsView ?? 'table');
+
+  const change = (mode: ViewMode) => {
+    setLocal(mode);
+    api
+      .patch<UserDto>('/me/settings', { credentialsView: mode })
+      .then(setUser)
+      .catch(() => {});
+  };
+
+  return [isMobile ? 'cards' : local, change, isMobile];
+}
 
 export function ViewToggle({ value, onChange, hidden }: { value: ViewMode; onChange: (v: ViewMode) => void; hidden?: boolean }) {
   if (hidden) return null;
   return (
-    <ToggleButtonGroup size="small" exclusive value={value} onChange={(_, v) => v && onChange(v)}>
-      <ToggleButton value="table" aria-label="Таблица">
-        <TableRowsIcon fontSize="small" sx={{ mr: 0.5 }} /> Таблица
-      </ToggleButton>
-      <ToggleButton value="cards" aria-label="Карточки">
-        <GridViewIcon fontSize="small" sx={{ mr: 0.5 }} /> Карточки
-      </ToggleButton>
-    </ToggleButtonGroup>
+    <div className="toggle-group" role="group" aria-label="Вид">
+      <button type="button" className={value === 'table' ? 'active' : ''} onClick={() => onChange('table')}>
+        <Icon name="table" small /> Таблица
+      </button>
+      <button type="button" className={value === 'cards' ? 'active' : ''} onClick={() => onChange('cards')}>
+        <Icon name="grid" small /> Карточки
+      </button>
+    </div>
   );
 }
 
@@ -46,138 +50,91 @@ interface ViewProps {
 }
 
 function UserLink({ item }: { item: UserCredentialDto }) {
-  if (!item.user) return null;
-  return (
-    <Link component={RouterLink} to={`/admin/users/${item.user.id}`} underline="hover">
-      {item.user.fullName}
-    </Link>
-  );
+  return item.user ? <Link to={`/admin/users/${item.user.id}`}>{item.user.fullName}</Link> : null;
 }
 
-function Empty({ text }: { text: string }) {
-  return (
-    <Box sx={{ py: 6, textAlign: 'center', color: 'text.secondary' }}>
-      <Typography>{text}</Typography>
-    </Box>
-  );
+function MarkedNote({ item }: { item: UserCredentialDto }) {
+  return item.isMarkedForDeletion ? <div className="small danger-text">Помечено на удаление</div> : null;
 }
 
 export function CredentialTable({ items, showUser, actions, emptyText = 'Нет записей' }: ViewProps) {
-  if (items.length === 0) return <Empty text={emptyText} />;
+  if (items.length === 0) return <div className="empty">{emptyText}</div>;
   return (
-    <TableContainer>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            {showUser && <TableCell>Сотрудник</TableCell>}
-            <TableCell>Удостоверение</TableCell>
-            <TableCell>Номер</TableCell>
-            <TableCell>Дата выдачи</TableCell>
-            <TableCell>Действительно до</TableCell>
-            <TableCell>Статус</TableCell>
-            {actions && <TableCell align="right" />}
-          </TableRow>
-        </TableHead>
-        <TableBody>
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            {showUser && <th>Сотрудник</th>}
+            <th>Удостоверение</th>
+            <th>Номер</th>
+            <th>Дата выдачи</th>
+            <th>Действительно до</th>
+            <th>Статус</th>
+            {actions && <th className="actions" />}
+          </tr>
+        </thead>
+        <tbody>
           {items.map((item) => (
-            <TableRow
-              key={item.id}
-              hover
-              sx={{
-                opacity: item.isMarkedForDeletion ? 0.55 : 1,
-                // Цветная полоса слева — статус виден при беглом просмотре
-                '& td:first-of-type': { borderLeft: `4px solid ${STATUS_COLORS[item.status].border}` },
-              }}
-            >
+            <tr key={item.id} className={`bar-${item.status}${item.isMarkedForDeletion ? ' dimmed' : ''}`}>
               {showUser && (
-                <TableCell>
+                <td>
                   <UserLink item={item} />
-                </TableCell>
+                </td>
               )}
-              <TableCell>
+              <td>
                 {item.name}
-                {item.isMarkedForDeletion && (
-                  <Typography variant="caption" color="error" display="block">
-                    Помечено на удаление
-                  </Typography>
-                )}
-              </TableCell>
-              <TableCell>{item.number ?? '—'}</TableCell>
-              <TableCell>{formatDateRu(item.issueDate)}</TableCell>
-              <TableCell>{formatDateRu(item.expiryDate)}</TableCell>
-              <TableCell>
+                <MarkedNote item={item} />
+              </td>
+              <td>{item.number ?? '—'}</td>
+              <td>{formatDateRu(item.issueDate)}</td>
+              <td>{formatDateRu(item.expiryDate)}</td>
+              <td>
                 <StatusBadge status={item.status} daysLeft={item.daysLeft} />
-              </TableCell>
-              {actions && (
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {actions(item)}
-                </TableCell>
-              )}
-            </TableRow>
+              </td>
+              {actions && <td className="actions">{actions(item)}</td>}
+            </tr>
           ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
-}
-
-function Field({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <Stack direction="row" justifyContent="space-between" spacing={1}>
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={500} textAlign="right">
-        {value}
-      </Typography>
-    </Stack>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export function CredentialCards({ items, showUser, actions, emptyText = 'Нет записей' }: ViewProps) {
-  if (items.length === 0) return <Empty text={emptyText} />;
+  if (items.length === 0) return <div className="empty">{emptyText}</div>;
   return (
-    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-      {items.map((item) => {
-        const c = STATUS_COLORS[item.status];
-        return (
-          <Card
-            key={item.id}
-            sx={{
-              bgcolor: c.bg,
-              borderColor: c.border,
-              borderWidth: item.status === 'WHITE' ? '1px' : '1px 1px 1px 6px',
-              borderStyle: item.status === 'WHITE' ? 'dashed' : 'solid',
-              opacity: item.isMarkedForDeletion ? 0.6 : 1,
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <CardContent sx={{ flexGrow: 1 }}>
-              <Stack spacing={1}>
-                <Typography fontWeight={600}>{item.name}</Typography>
-                {showUser && <UserLink item={item} />}
-                <Box>
-                  <StatusBadge status={item.status} daysLeft={item.daysLeft} />
-                </Box>
-                <Field label="Номер" value={item.number ?? '—'} />
-                <Field label="Дата выдачи" value={formatDateRu(item.issueDate)} />
-                <Field label="Действительно до" value={formatDateRu(item.expiryDate)} />
-                {item.isMarkedForDeletion && (
-                  <Typography variant="caption" color="error">
-                    Помечено на удаление
-                  </Typography>
-                )}
-              </Stack>
-            </CardContent>
-            {actions && <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>{actions(item)}</CardActions>}
-          </Card>
-        );
-      })}
-    </Box>
+    <div className="cards">
+      {items.map((item) => (
+        <div key={item.id} className={`cred-card s-${item.status}${item.isMarkedForDeletion ? ' dimmed' : ''}`}>
+          <div className="title">{item.name}</div>
+          {showUser && <UserLink item={item} />}
+          <div>
+            <StatusBadge status={item.status} daysLeft={item.daysLeft} />
+          </div>
+          <div className="kv">
+            Номер <b>{item.number ?? '—'}</b>
+          </div>
+          <div className="kv">
+            Дата выдачи <b>{formatDateRu(item.issueDate)}</b>
+          </div>
+          <div className="kv">
+            Действительно до <b>{formatDateRu(item.expiryDate)}</b>
+          </div>
+          <MarkedNote item={item} />
+          {actions && <div className="card-actions">{actions(item)}</div>}
+        </div>
+      ))}
+    </div>
   );
 }
 
+/** Таблица — внутри белой панели, карточки — на фоне страницы. */
 export function CredentialView({ mode, ...props }: ViewProps & { mode: ViewMode }) {
-  return mode === 'table' ? <CredentialTable {...props} /> : <CredentialCards {...props} />;
+  return mode === 'table' ? (
+    <div className="panel">
+      <CredentialTable {...props} />
+    </div>
+  ) : (
+    <CredentialCards {...props} />
+  );
 }

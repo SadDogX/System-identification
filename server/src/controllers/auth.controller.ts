@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
-import { config } from '../config';
-import { currentUser } from '../middleware/auth';
-import * as authService from '../services/auth.service';
+import { config } from '../config.ts';
+import { currentUser } from '../middleware/auth.ts';
+import { readCookie } from '../middleware/http.ts';
+import * as authService from '../services/auth.service.ts';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -22,7 +23,7 @@ export async function login(req: Request, res: Response) {
 }
 
 export async function refresh(req: Request, res: Response) {
-  const session = await authService.refresh(req.cookies?.[REFRESH_COOKIE]);
+  const session = await authService.refresh(readCookie(req, REFRESH_COOKIE));
   setRefreshCookie(res, session.refreshToken);
   res.json(session.response);
 }

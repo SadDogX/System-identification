@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import type { Tx } from '../db';
+import type { Tx } from '../db.ts';
 
 type Diff = Record<string, { from: unknown; to: unknown }>;
 

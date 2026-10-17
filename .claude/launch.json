@@ -2,16 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "server",
+      "name": "app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "server"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 4100
     },
     {
-      "name": "client",
+      "name": "studio",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "client"],
-      "port": 5180
+      "runtimeArgs": [
+        "run",
+        "db:studio"
+      ],
+      "port": 5555
     }
   ]
 }

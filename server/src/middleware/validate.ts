@@ -1,29 +1,20 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ZodError, type ZodTypeAny } from 'zod';
-import { badRequest } from '../utils/errors';
+import { parse, type Validator } from '@app/shared';
+import { badRequest } from '../utils/errors.ts';
 
-export function zodDetails(error: ZodError): Record<string, string> {
-  const details: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = issue.path.join('.') || '_';
-    details[key] ??= issue.message;
-  }
-  return details;
-}
+// req.query в Express — геттер, поэтому проверенный query храним отдельно
+type QueryRequest = Request & { validQuery: unknown };
 
-/** Валидирует body или query; результат (с отброшенными лишними полями) кладёт обратно. */
-export function validate(schema: ZodTypeAny, source: 'body' | 'query' = 'body') {
+/** Проверяет body или query; результат (с отброшенными лишними полями) кладёт обратно. */
+export function validate<T>(schema: Validator<T>, source: 'body' | 'query' = 'body') {
   return (req: Request, _res: Response, next: NextFunction) => {
-    const result = schema.safeParse(req[source]);
-    if (!result.success) return next(badRequest('Ошибка валидации', zodDetails(result.error)));
-    if (source === 'body') req.body = result.data;
-    else (req as QueryRequest).validQuery = result.data;
+    const result = parse(schema, req[source] ?? {});
+    if (!result.ok) return next(badRequest('Ошибка валидации', result.issues));
+    if (source === 'body') req.body = result.value;
+    else (req as QueryRequest).validQuery = result.value;
     next();
   };
 }
-
-// req.query в Express 4 — геттер, поэтому валидированный query храним отдельно
-type QueryRequest = Request & { validQuery: unknown };
 
 export function validQuery<T>(req: Request): T {
   return (req as QueryRequest).validQuery as T;

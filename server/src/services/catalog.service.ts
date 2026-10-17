@@ -1,9 +1,9 @@
 import type { Credential, User } from '@prisma/client';
 import type { CatalogItemDto, CatalogItemRequest } from '@app/shared';
-import { prisma } from '../db';
-import { notFound } from '../utils/errors';
-import { audit, diffOf } from './audit.service';
-import { backfillCatalogItem } from './credentials.service';
+import { prisma } from '../db.ts';
+import { notFound } from '../utils/errors.ts';
+import { audit, diffOf } from './audit.service.ts';
+import { backfillCatalogItem } from './credentials.service.ts';
 
 const FIELDS = ['name', 'validityMonths', 'sortOrder', 'isArchived'] as const;
 

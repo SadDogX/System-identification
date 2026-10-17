@@ -1,5 +1,5 @@
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMEZONE, todayInTimezone, type AppSettingsDto } from '@app/shared';
-import { prisma } from '../db';
+import { prisma } from '../db.ts';
 
 const DEFAULTS: Record<keyof AppSettingsDto, string> = {
   yellowDays: String(DEFAULT_THRESHOLDS.yellowDays),

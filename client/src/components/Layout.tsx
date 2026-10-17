@@ -1,53 +1,28 @@
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import {
-  AppBar,
-  Avatar,
-  Box,
-  Divider,
-  Drawer,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Toolbar,
-  Typography,
-  useMediaQuery,
-  useTheme,
-} from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import PeopleIcon from '@mui/icons-material/People';
-import BadgeIcon from '@mui/icons-material/Badge';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import SendIcon from '@mui/icons-material/Send';
-import HistoryIcon from '@mui/icons-material/History';
-import PersonIcon from '@mui/icons-material/Person';
-import { useAuth, useCurrentUser } from '../auth/AuthContext';
-import { ROLE_LABELS } from '../utils';
-import { NotificationBell } from './NotificationBell';
+import { useState, type ReactNode } from 'react';
+import { useAuth, useCurrentUser } from '../auth.tsx';
+import { Link, useRouter } from '../router.tsx';
+import { ROLE_LABELS } from '../utils.ts';
+import { Icon, type IconName } from './Icon.tsx';
+import { NotificationBell } from './NotificationBell.tsx';
+import { useClickOutside } from './ui.tsx';
 
-const DRAWER_WIDTH = 248;
-
-const ADMIN_NAV = [
-  { to: '/admin/dashboard', label: 'Дашборд', icon: DashboardIcon },
-  { to: '/admin/users', label: 'Пользователи', icon: PeopleIcon },
-  { to: '/admin/credentials', label: 'Удостоверения', icon: BadgeIcon },
-  { to: '/admin/catalog', label: 'Справочник', icon: MenuBookIcon },
-  { to: '/admin/notifications', label: 'Уведомления', icon: NotificationsIcon },
-  { to: '/admin/messages', label: 'Сообщения', icon: SendIcon },
-  { to: '/admin/audit-log', label: 'Журнал действий', icon: HistoryIcon },
+const ADMIN_NAV: { to: string; label: string; icon: IconName }[] = [
+  { to: '/admin/dashboard', label: 'Дашборд', icon: 'dashboard' },
+  { to: '/admin/overview', label: 'Общие сведения', icon: 'overview' },
+  { to: '/admin/users', label: 'Пользователи', icon: 'people' },
+  { to: '/admin/credentials', label: 'Удостоверения', icon: 'badge' },
+  { to: '/admin/catalog', label: 'Справочник удостоверений', icon: 'book' },
+  { to: '/admin/positions', label: 'Справочник должностей', icon: 'work' },
+  { to: '/admin/notifications', label: 'Уведомления', icon: 'bell' },
+  { to: '/admin/messages', label: 'Сообщения', icon: 'send' },
+  { to: '/admin/audit-log', label: 'Журнал действий', icon: 'history' },
 ];
 
-const USER_NAV = [
-  { to: '/user/dashboard', label: 'Главная', icon: DashboardIcon },
-  { to: '/user/credentials', label: 'Мои удостоверения', icon: BadgeIcon },
-  { to: '/user/notifications', label: 'Уведомления', icon: NotificationsIcon },
-  { to: '/user/profile', label: 'Профиль', icon: PersonIcon },
+const USER_NAV: typeof ADMIN_NAV = [
+  { to: '/user/dashboard', label: 'Главная', icon: 'dashboard' },
+  { to: '/user/credentials', label: 'Мои удостоверения', icon: 'badge' },
+  { to: '/user/notifications', label: 'Уведомления', icon: 'bell' },
+  { to: '/user/profile', label: 'Профиль', icon: 'person' },
 ];
 
 function initials(fullName: string) {
@@ -58,95 +33,88 @@ function initials(fullName: string) {
     .join('');
 }
 
-export function Layout() {
+function ProfileMenu() {
   const user = useCurrentUser();
   const { logout } = useAuth();
-  const navigate = useNavigate();
-  const theme = useTheme();
-  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const { navigate } = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useClickOutside(open, () => setOpen(false));
 
-  const nav = user.role === 'ADMIN' ? ADMIN_NAV : USER_NAV;
-
-  const drawer = (
-    <Box>
-      <Toolbar>
-        <BadgeIcon color="primary" sx={{ mr: 1 }} />
-        <Typography fontWeight={700} color="primary">
-          Учёт удостоверений
-        </Typography>
-      </Toolbar>
-      <Divider />
-      <List sx={{ px: 1 }}>
-        {nav.map(({ to, label, icon: Icon }) => (
-          <ListItemButton
-            key={to}
-            component={NavLink}
-            to={to}
-            onClick={() => setMobileOpen(false)}
-            sx={{
-              borderRadius: 1,
-              mb: 0.5,
-              '&.active': { bgcolor: 'primary.main', color: 'primary.contrastText', '& .MuiListItemIcon-root': { color: 'inherit' } },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 36 }}>
-              <Icon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary={label} />
-          </ListItemButton>
-        ))}
-      </List>
-    </Box>
-  );
+  const go = (to: string) => {
+    setOpen(false);
+    navigate(to);
+  };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: '1px solid #e3e7eb', ml: { md: `${DRAWER_WIDTH}px` }, width: { md: `calc(100% - ${DRAWER_WIDTH}px)` } }}>
-        <Toolbar>
-          {!isDesktop && (
-            <IconButton edge="start" onClick={() => setMobileOpen(true)} sx={{ mr: 1 }}>
-              <MenuIcon />
-            </IconButton>
+    <div className="anchor" ref={ref}>
+      <button type="button" className="avatar" aria-label="Меню профиля" onClick={() => setOpen((v) => !v)}>
+        {initials(user.fullName)}
+      </button>
+      {open && (
+        <div className="popover" style={{ width: 260 }}>
+          <div className="popover-head" style={{ display: 'block' }}>
+            <div className="bold">{user.fullName}</div>
+            <div className="muted small">
+              {ROLE_LABELS[user.role]} · {user.login}
+            </div>
+          </div>
+          {user.role === 'USER' && (
+            <button type="button" className="menu-item" onClick={() => go('/user/profile')}>
+              Профиль
+            </button>
           )}
-          <Box sx={{ flexGrow: 1 }} />
+          <button type="button" className="menu-item" onClick={() => go('/change-password')}>
+            Сменить пароль
+          </button>
+          <button type="button" className="menu-item" onClick={() => logout().then(() => navigate('/login'))}>
+            Выйти
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Layout({ children }: { children: ReactNode }) {
+  const user = useCurrentUser();
+  const { path } = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const nav = user.role === 'ADMIN' ? ADMIN_NAV : USER_NAV;
+
+  return (
+    <div className="shell">
+      <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
+        <div className="brand">
+          <Icon name="badge" />
+          Учёт удостоверений
+        </div>
+        <nav className="nav">
+          {nav.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`nav-link${path.startsWith(item.to) ? ' active' : ''}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name={item.icon} />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+      <div className={`scrim${menuOpen ? ' open' : ''}`} onClick={() => setMenuOpen(false)} />
+
+      <div className="main">
+        <header className="topbar">
+          <button type="button" className="icon-btn lg menu-button" aria-label="Меню" onClick={() => setMenuOpen(true)}>
+            <Icon name="menu" />
+          </button>
+          <div className="grow" />
           <NotificationBell />
-          <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ ml: 1 }}>
-            <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', fontSize: 14 }}>{initials(user.fullName)}</Avatar>
-          </IconButton>
-          <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-            <Box sx={{ px: 2, py: 1 }}>
-              <Typography fontWeight={600}>{user.fullName}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {ROLE_LABELS[user.role]} · {user.login}
-              </Typography>
-            </Box>
-            <Divider />
-            {user.role === 'USER' && (
-              <MenuItem onClick={() => { setMenuAnchor(null); navigate('/user/profile'); }}>Профиль</MenuItem>
-            )}
-            <MenuItem onClick={() => { setMenuAnchor(null); navigate('/change-password'); }}>Сменить пароль</MenuItem>
-            <MenuItem onClick={() => { setMenuAnchor(null); logout().then(() => navigate('/login')); }}>Выйти</MenuItem>
-          </Menu>
-        </Toolbar>
-      </AppBar>
-
-      <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}>
-        <Drawer
-          variant={isDesktop ? 'permanent' : 'temporary'}
-          open={isDesktop || mobileOpen}
-          onClose={() => setMobileOpen(false)}
-          ModalProps={{ keepMounted: true }}
-          sx={{ '& .MuiDrawer-paper': { width: DRAWER_WIDTH, boxSizing: 'border-box', borderRight: '1px solid #e3e7eb' } }}
-        >
-          {drawer}
-        </Drawer>
-      </Box>
-
-      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 }, mt: 8 }}>
-        <Outlet />
-      </Box>
-    </Box>
+          <ProfileMenu />
+        </header>
+        <main className="content">{children}</main>
+      </div>
+    </div>
   );
 }

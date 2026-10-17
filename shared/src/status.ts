@@ -1,4 +1,4 @@
-import { addDays, daysBetween } from './dates';
+import { addDays, daysBetween } from './dates.ts';
 
 export const CREDENTIAL_STATUSES = ['GREEN', 'YELLOW', 'RED', 'WHITE'] as const;
 export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number];

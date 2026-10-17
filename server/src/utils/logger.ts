@@ -1,7 +1,15 @@
-import pino from 'pino';
-import { config } from '../config';
+import { config } from '../config.ts';
 
-export const logger = pino({
-  level: config.isTest ? 'silent' : 'info',
-  transport: config.isProduction || config.isTest ? undefined : { target: 'pino-pretty' },
-});
+function write(level: 'info' | 'error', message: string, data?: unknown) {
+  if (config.isTest) return;
+  const time = new Date().toLocaleTimeString('ru-RU');
+  const line = `[${time}] ${message}`;
+  if (level === 'error') console.error(line, data ?? '');
+  else if (data === undefined) console.log(line);
+  else console.log(line, data);
+}
+
+export const logger = {
+  info: (message: string, data?: unknown) => write('info', message, data),
+  error: (message: string, data?: unknown) => write('error', message, data),
+};

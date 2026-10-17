@@ -1,12 +1,10 @@
-import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { CREDENTIAL_STATUSES, STATUS_LABELS, type CredentialStatus } from '@app/shared';
-import { useCurrentUser } from '../../auth/AuthContext';
-import { CredentialCards } from '../../components/CredentialViews';
-import { PageHeader } from '../../components/PageHeader';
-import { StatusIcon } from '../../components/StatusBadge';
-import { STATUS_COLORS } from '../../theme';
-import { useOwnCredentials } from './UserCredentialsPage';
+import { useCurrentUser } from '../../auth.tsx';
+import { CredentialCards } from '../../components/CredentialViews.tsx';
+import { StatusIcon } from '../../components/StatusBadge.tsx';
+import { Alert, PageHeader } from '../../components/ui.tsx';
+import { Link } from '../../router.tsx';
+import { useOwnCredentials } from './UserCredentialsPage.tsx';
 
 /** Ответ на вопрос: «Какие мои удостоверения действительны и какие нужно обновить?» */
 export function UserDashboardPage() {
@@ -20,34 +18,31 @@ export function UserDashboardPage() {
     .filter((c) => c.status !== 'GREEN')
     // Сначала самые срочные, незаполненные в конце
     .sort((a, b) => (a.daysLeft ?? Infinity) - (b.daysLeft ?? Infinity));
+  const firstName = user.fullName.split(' ')[1] || user.fullName;
 
   return (
     <>
-      <PageHeader title={`Здравствуйте, ${user.fullName.split(' ').slice(1, 2).join('') || user.fullName}!`} />
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', mb: 3 }}>
+      <PageHeader title={`Здравствуйте, ${firstName}!`} />
+      <div className="stats">
         {CREDENTIAL_STATUSES.map((s) => (
-          <Paper key={s} sx={{ p: 2, borderLeft: `4px solid ${STATUS_COLORS[s].border}` }}>
-            <Stack direction="row" spacing={1} alignItems="center">
+          <div key={s} className={`stat ${s}`}>
+            <div className="stat-label">
               <StatusIcon status={s} />
-              <Typography variant="body2" color="text.secondary">
-                {STATUS_LABELS[s]}
-              </Typography>
-            </Stack>
-            <Typography variant="h4" fontWeight={600} sx={{ mt: 1 }}>
-              {counts[s]}
-            </Typography>
-          </Paper>
+              {STATUS_LABELS[s]}
+            </div>
+            <div className="stat-value">{counts[s]}</div>
+          </div>
         ))}
-      </Box>
+      </div>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h6">Требуют внимания</Typography>
-        <Button component={RouterLink} to="/user/credentials">
+      <div className="row between mb">
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Требуют внимания</h2>
+        <Link to="/user/credentials" className="btn">
           Все удостоверения
-        </Button>
-      </Stack>
+        </Link>
+      </div>
       {data.length > 0 && attention.length === 0 ? (
-        <Alert severity="success">Все удостоверения действительны. Обновлять ничего не нужно.</Alert>
+        <Alert kind="success">Все удостоверения действительны. Обновлять ничего не нужно.</Alert>
       ) : (
         <CredentialCards items={attention} emptyText="Удостоверений пока нет" />
       )}

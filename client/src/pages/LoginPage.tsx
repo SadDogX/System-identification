@@ -1,65 +1,54 @@
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
-import BadgeIcon from '@mui/icons-material/Badge';
-import { useMutation } from '@tanstack/react-query';
-import { loginRequestSchema, type LoginRequest } from '@app/shared';
-import { errorMessage } from '../api/client';
-import { homePath, useAuth } from '../auth/AuthContext';
+import type { ReactNode } from 'react';
+import { loginRequestSchema } from '@app/shared';
+import { errorMessage } from '../api.ts';
+import { homePath, useAuth } from '../auth.tsx';
+import { Icon } from '../components/Icon.tsx';
+import { Alert, PasswordField, TextField } from '../components/ui.tsx';
+import { useAction } from '../data.ts';
+import { useForm } from '../form.ts';
+import { Redirect, useRouter } from '../router.tsx';
 
-export function AuthCard({ title, children }: { title: string; children: React.ReactNode }) {
+export function AuthCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', p: 2 }}>
-      <Paper sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 400 }}>
-        <Stack alignItems="center" spacing={1} sx={{ mb: 3 }}>
-          <BadgeIcon color="primary" sx={{ fontSize: 40 }} />
-          <Typography variant="h6" fontWeight={600} textAlign="center">
-            {title}
-          </Typography>
-        </Stack>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-head">
+          <Icon name="badge" />
+          {title}
+        </div>
         {children}
-      </Paper>
-    </Box>
+      </div>
+    </div>
   );
 }
 
 export function LoginPage() {
   const { user, login, initializing } = useAuth();
-  const navigate = useNavigate();
-  const { register, handleSubmit, formState } = useForm<LoginRequest>({ resolver: zodResolver(loginRequestSchema) });
-  const mutation = useMutation({
-    mutationFn: login,
+  const { navigate } = useRouter();
+  const form = useForm({ login: '', password: '' });
+  const submit = useAction(login, {
     onSuccess: (u) => navigate(u.mustChangePassword ? '/change-password' : homePath(u), { replace: true }),
   });
 
-  if (!initializing && user) return <Navigate to={homePath(user)} replace />;
+  if (!initializing && user) return <Redirect to={homePath(user)} />;
 
   return (
     <AuthCard title="Учёт удостоверений сотрудников">
-      <form onSubmit={handleSubmit((data) => mutation.mutate(data))} noValidate>
-        <Stack spacing={2}>
-          <TextField
-            label="Логин"
-            autoComplete="username"
-            autoFocus
-            {...register('login')}
-            error={!!formState.errors.login}
-            helperText={formState.errors.login?.message}
-          />
-          <TextField
-            label="Пароль"
-            type="password"
-            autoComplete="current-password"
-            {...register('password')}
-            error={!!formState.errors.password}
-            helperText={formState.errors.password?.message}
-          />
-          {mutation.isError && <Alert severity="error">{errorMessage(mutation.error)}</Alert>}
-          <Button type="submit" variant="contained" size="large" disabled={mutation.isPending}>
-            Войти
-          </Button>
-        </Stack>
+      <form
+        noValidate
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = form.validate(loginRequestSchema);
+          if (data) submit.run(data);
+        }}
+      >
+        <TextField label="Логин" autoComplete="username" autoFocus {...form.field('login')} />
+        <PasswordField label="Пароль" autoComplete="current-password" {...form.field('password')} />
+        {submit.error ? <Alert>{errorMessage(submit.error)}</Alert> : null}
+        <button type="submit" className="btn btn-primary btn-lg" disabled={submit.pending}>
+          Войти
+        </button>
       </form>
     </AuthCard>
   );

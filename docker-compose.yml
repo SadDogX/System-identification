@@ -19,5 +19,13 @@ services:
       interval: 5s
       retries: 20
 
+  # Тестовый почтовый сервер: принимает письма и показывает их в веб-интерфейсе
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    restart: unless-stopped
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+
 volumes:
   mysql-data:

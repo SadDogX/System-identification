@@ -1,24 +1,46 @@
-import cron from 'node-cron';
 import { DEFAULT_TIMEZONE } from '@app/shared';
-import { logger } from '../utils/logger';
-import { checkExpiryNotifications, createAdminDigest } from '../services/notifications.service';
+import { logger } from '../utils/logger.ts';
+import { checkExpiryNotifications, sendAdminEmailDigest } from '../services/notifications.service.ts';
+
+const RUN_HOUR = 8; // 08:00 по Москве
+const TICK_MS = 10 * 60 * 1000;
 
 /** Проверка сроков. Вынесена отдельно, чтобы позже перенести в worker/очередь. */
 export async function runExpiryCheck() {
   const created = await checkExpiryNotifications();
-  const digests = await createAdminDigest();
-  logger.info({ created, digests }, 'Проверка сроков удостоверений выполнена');
+  const emails = await sendAdminEmailDigest();
+  logger.info(`Проверка сроков удостоверений: новых уведомлений ${created}, писем администраторам ${emails}`);
 }
 
+function moscowNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DEFAULT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
+}
+
+/**
+ * Простой планировщик без внешних модулей: раз в 10 минут проверяет,
+ * наступило ли 08:00 по Москве и запускалась ли проверка сегодня.
+ * Плюс запуск при старте — дубли отсекает dedupKey.
+ */
 export function scheduleExpiryCheck() {
-  // Каждый день в 08:00 по Москве
-  cron.schedule(
-    '0 8 * * *',
-    () => {
-      runExpiryCheck().catch((err) => logger.error({ err }, 'Ошибка проверки сроков'));
-    },
-    { timezone: DEFAULT_TIMEZONE },
-  );
-  // И при старте — чтобы не ждать утра после перезапуска; дубли отсекает dedupKey
-  runExpiryCheck().catch((err) => logger.error({ err }, 'Ошибка проверки сроков'));
+  let lastRunDate = '';
+  const run = () => runExpiryCheck().catch((err) => logger.error('Ошибка проверки сроков', err));
+
+  run();
+  const timer = setInterval(() => {
+    const now = moscowNow();
+    if (now.hour >= RUN_HOUR && now.date !== lastRunDate) {
+      lastRunDate = now.date;
+      run();
+    }
+  }, TICK_MS);
+  timer.unref();
 }

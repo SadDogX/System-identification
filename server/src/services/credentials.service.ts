@@ -6,14 +6,15 @@ import {
   type Paginated,
   type UserCredentialDto,
 } from '@app/shared';
-import { prisma, type Tx } from '../db';
-import { badRequest, notFound } from '../utils/errors';
-import { toDbDate } from '../utils/dates';
-import { toUserCredentialDto } from '../utils/mappers';
-import { audit, diffOf } from './audit.service';
-import { getDateContext } from './settings.service';
-import { checkExpiryNotifications } from './notifications.service';
-import { statusWhere, visibleCredentialWhere } from './credentialFilters';
+import { prisma, type Tx } from '../db.ts';
+import { badRequest, notFound } from '../utils/errors.ts';
+import { toDbDate } from '../utils/dates.ts';
+import { toUserCredentialDto } from '../utils/mappers.ts';
+import { audit, diffOf } from './audit.service.ts';
+import { getDateContext } from './settings.service.ts';
+import { checkExpiryNotifications } from './notifications.service.ts';
+import { statusWhere, visibleCredentialWhere } from './credentialFilters.ts';
+import { deletePhotoFile } from './photos.service.ts';
 
 const AUDIT_FIELDS = ['number', 'issueDate', 'expiryDate', 'comment', 'isMarkedForDeletion'] as const;
 
@@ -97,6 +98,35 @@ export async function updateOwn(user: User, id: number, issueDate: string): Prom
     return row;
   });
   await checkExpiryNotifications({ userCredentialId: id });
+  return toUserCredentialDto(updated, today, settings);
+}
+
+/** Сотрудник очищает данные своего удостоверения: даты, номер и фото. Запись остаётся «не заполнено». */
+export async function clearOwn(user: User, id: number): Promise<UserCredentialDto> {
+  const { settings, today } = await getDateContext();
+  const existing = await prisma.userCredential.findFirst({
+    where: { id, userId: user.id, isMarkedForDeletion: false, credential: { isArchived: false } },
+  });
+  if (!existing) throw notFound('Удостоверение не найдено');
+
+  const data = { number: null, issueDate: null, expiryDate: null, photoFile: null, photoMime: null };
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.userCredential.update({
+      where: { id },
+      data: { ...data, updatedById: user.id },
+      include: { credential: true },
+    });
+    await audit(tx, {
+      actorId: user.id,
+      action: 'credential.clear',
+      entityType: 'UserCredential',
+      entityId: id,
+      targetUserId: user.id,
+      diff: diffOf(existing, data, [...AUDIT_FIELDS]),
+    });
+    return row;
+  });
+  await deletePhotoFile(existing.photoFile);
   return toUserCredentialDto(updated, today, settings);
 }
 
@@ -215,13 +245,19 @@ export async function adminUpdate(actor: User, id: number, input: AdminCredentia
 }
 
 /** Очистка данных: запись и позиция справочника остаются, у сотрудника снова «не заполнено». */
-export const adminClear = (actor: User, id: number) =>
-  applyAdminChange(actor, id, 'credential.clear', {
+export async function adminClear(actor: User, id: number) {
+  const before = await findForAdmin(id);
+  const result = await applyAdminChange(actor, id, 'credential.clear', {
     number: null,
     issueDate: null,
     expiryDate: null,
     comment: null,
+    photoFile: null,
+    photoMime: null,
   });
+  await deletePhotoFile(before.photoFile);
+  return result;
+}
 
 export const adminMark = (actor: User, id: number) =>
   applyAdminChange(actor, id, 'credential.mark', { isMarkedForDeletion: true });

@@ -15,6 +15,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'credential.mark': 'Пометил удостоверение на удаление',
   'credential.unmark': 'Снял пометку на удаление',
   'message.send': 'Отправил сообщение',
+  'position.create': 'Добавил должность',
+  'position.update': 'Изменил должность',
+  'position.archive': 'Архивировал должность',
+  'position.unarchive': 'Вернул должность из архива',
+  'credential.photo': 'Загрузил фото удостоверения',
+  'credential.photoDelete': 'Удалил фото удостоверения',
 };
 
 export const AUDIT_FIELD_LABELS: Record<string, string> = {
@@ -22,6 +28,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   login: 'Логин',
   role: 'Роль',
   position: 'Должность',
+  positionId: 'Должность',
+  photo: 'Фото',
   phone: 'Телефон',
   email: 'Email',
   isActive: 'Активен',
