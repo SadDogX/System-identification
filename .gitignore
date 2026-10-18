@@ -3,5 +3,5 @@ dist/
 .env
 *.log
 coverage/
-server/uploads/
-server/uploads-test/
+app/api/uploads/
+app/api/uploads-test/

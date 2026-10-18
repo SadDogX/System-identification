@@ -3,21 +3,21 @@
   "private": true,
   "workspaces": [
     "shared",
-    "server",
-    "client"
+    "app/api",
+    "app/web"
   ],
   "scripts": {
     "db:up": "docker compose up -d mysql",
-    "db:migrate": "npm run migrate -w server",
-    "db:seed": "npm run seed -w server",
-    "db:demo": "npm run seed:demo -w server",
-    "db:reset": "npm run reset -w server",
+    "db:migrate": "npm run migrate -w @app/api",
+    "db:seed": "npm run seed -w @app/api",
+    "db:demo": "npm run seed:demo -w @app/api",
+    "db:reset": "npm run reset -w @app/api",
     "dev": "node scripts/dev.mjs",
-    "build": "npm run build -w client",
-    "start": "npm run build && npm start -w server",
-    "typecheck": "tsc -p shared && tsc -p server && tsc -p client",
-    "test": "npm test -w shared && npm test -w server",
-    "db:studio": "npm run studio -w server"
+    "build": "npm run build -w @app/web",
+    "start": "npm run build && npm start -w @app/api",
+    "typecheck": "tsc -p shared && tsc -p app/api && tsc -p app/web",
+    "test": "npm test -w shared && npm test -w @app/api",
+    "db:studio": "npm run studio -w @app/api"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

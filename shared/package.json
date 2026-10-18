@@ -3,8 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "description": "Общее для приложений из app/: типы, схемы, валидация, расчёт сроков, UI-кит, конфигурация",
+  "exports": {
+    ".": "./core/index.ts",
+    "./ui": "./ui/index.ts",
+    "./ui/styles.css": "./ui/styles.css"
+  },
   "scripts": {
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"core/**/*.test.ts\""
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
   }
 }

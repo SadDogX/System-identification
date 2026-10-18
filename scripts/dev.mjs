@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 const dir = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 
 const processes = [
-  ['client', ['build.mjs', '--watch'], dir('../client/')],
-  ['server', ['--watch', '--env-file=.env', 'src/server.ts'], dir('../server/')],
+  ['web', ['build.mjs', '--watch'], dir('../app/web/')],
+  ['api', ['--watch', '--env-file=.env', 'src/server.ts'], dir('../app/api/')],
 ].map(([name, args, cwd]) => {
   const child = spawn(process.execPath, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
   const prefix = (stream, out) =>
