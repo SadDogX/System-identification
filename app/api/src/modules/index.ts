@@ -9,17 +9,7 @@ import { messagesModule } from './messages/index.ts';
 import { dashboardModule } from './dashboard/index.ts';
 import { overviewModule } from './overview/index.ts';
 import { auditModule } from './audit/index.ts';
-
-/** Все функциональные модули системы. Новый модуль — новая папка и строка здесь. */
-export const modules: AppModule[] = [
-  authModule,
-  usersModule,
-  credentialsModule,
-  catalogModule,
-  positionsModule,
-  notificationsModule,
-  messagesModule,
-  dashboardModule,
-  overviewModule,
-  auditModule,
-];
+import { radarCardsModule } from './radarCards/index.ts';
+import { ifoModule } from './ifo/index.ts';
+import { workScheduleModule } from './workSchedule/index.ts';
+export const modules: AppModule[] = [authModule, usersModule, credentialsModule, catalogModule, positionsModule, notificationsModule, messagesModule, dashboardModule, overviewModule, auditModule, radarCardsModule, ifoModule, workScheduleModule];

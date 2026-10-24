@@ -146,7 +146,77 @@ export const credentialListQuerySchema = object({
   pageSize: pageSize(50, 200),
 });
 
-// ---------- Сообщения ----------
+// ---------- Карты безопасности «Радар» ----------
+
+export const radarCardSchema = object({
+  incidentDate: isoDate,
+  customerName: text({ max: 200, message: 'Укажите заказчика' }),
+  userId: optionalId(),
+  mainInfo: text({ max: 5000, message: 'Укажите основную информацию' }),
+  event: text({ max: 10000, message: 'Опишите событие' }),
+  actionsTaken: text({ max: 10000, message: 'Опишите выполненные действия' }),
+  requiredActions: optionalText(10000),
+  stoppedWork: bool(),
+});
+export type RadarCardRequest = Infer<typeof radarCardSchema>;
+
+export const ifoProposalSchema = object({
+  title: text({ max: 300, message: 'Укажите название предложения' }),
+  problem: text({ max: 10000, message: 'Опишите проблему или потери' }),
+  proposal: text({ max: 10000, message: 'Опишите предложение' }),
+  expectedBenefit: text({ max: 10000, message: 'Опишите ожидаемую пользу' }),
+});
+export type IfoProposalRequest = Infer<typeof ifoProposalSchema>;
+
+export const radarCardListQuerySchema = object({
+  from: optional(isoDate),
+  to: optional(isoDate),
+  previousMonth: queryBool(),
+  page,
+  pageSize: pageSize(30, 100),
+});
+
+export const WORK_DAY_STATUSES = ['WORK', 'FREE_SHIFT', 'TRAVEL', 'SICK_LEAVE', 'VACATION', 'TRAINING'] as const;
+export type WorkDayStatus = (typeof WORK_DAY_STATUSES)[number];
+export const workScheduleUpdateSchema = object({ date: isoDate, status: oneOf(WORK_DAY_STATUSES) });
+export type WorkScheduleUpdateRequest = Infer<typeof workScheduleUpdateSchema>;
+export const workScheduleQuerySchema = object({ userId: optional(int()), year: optional(int({ min: 2020, max: 2100 })) });
+
+
+export const shiftPartnersSchema = object({
+  year: int({ min: 2020, max: 2100 }),
+  userAId: int({ min: 1 }),
+  userBId: int({ min: 1 }),
+  rotationDays: oneOf(['5', '4'] as const),
+  travelDays: int({ min: 1, max: 14 }),
+});
+export type ShiftPartnersRequest = Infer<typeof shiftPartnersSchema>;
+
+export const scheduleTemplateSchema = object({
+  userId: int({ min: 1 }),
+  name: text({ max: 200, message: 'Schedule template name is required' }),
+  workDays: int({ min: 1, max: 365 }),
+  restDays: int({ min: 1, max: 365 }),
+  cycleStart: isoDate,
+  validFrom: isoDate,
+  validTo: optional(isoDate),
+});
+export type ScheduleTemplateRequest = Infer<typeof scheduleTemplateSchema>;
+
+
+export const schedulePeriodSchema = object({
+  userId: int({ min: 1 }),
+  type: oneOf(['WORK', 'REST', 'VACATION', 'SICK_LEAVE', 'ABSENCE', 'UNDETERMINED'] as const),
+  startDate: isoDate,
+  endDate: isoDate,
+  note: optionalText(2000),
+});
+export type SchedulePeriodRequest = Infer<typeof schedulePeriodSchema>;
+
+
+
+
+
 
 export const sendMessageSchema = object(
   {

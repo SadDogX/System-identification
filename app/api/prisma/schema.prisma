@@ -7,45 +7,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  ADMIN
-  USER
-}
-
-enum NotificationKind {
-  EXPIRY
-  MESSAGE
-  DIGEST
-}
-
 model User {
-  id                 Int      @id @default(autoincrement())
-  fullName           String   @db.VarChar(200)
-  // Логин остаётся занятым и после мягкого удаления пользователя
-  login              String   @unique @db.VarChar(50)
-  passwordHash       String   @db.VarChar(255)
-  role               Role     @default(USER)
-  positionId         Int?
-  phone              String?  @db.VarChar(50)
-  email              String?  @db.VarChar(150)
-  isActive           Boolean  @default(true)
-  isDeleted          Boolean  @default(false)
-  mustChangePassword Boolean  @default(true)
-  // Увеличивается при блокировке, смене роли или пароля — старые токены перестают работать
-  tokenVersion       Int      @default(0)
+  id                 Int                 @id @default(autoincrement())
+  fullName           String              @db.VarChar(200)
+  login              String              @unique @db.VarChar(50)
+  passwordHash       String              @db.VarChar(255)
+  role               Role                @default(USER)
+  phone              String?             @db.VarChar(50)
+  email              String?             @db.VarChar(150)
+  isActive           Boolean             @default(true)
+  isDeleted          Boolean             @default(false)
+  mustChangePassword Boolean             @default(true)
+  tokenVersion       Int                 @default(0)
   uiSettings         Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  position           Position?        @relation(fields: [positionId], references: [id])
-  credentials        UserCredential[] @relation("CredentialOwner")
-  updatedCredentials UserCredential[] @relation("CredentialEditor")
-  notifications      Notification[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  positionId         Int?
+  auditAsActor       AuditLog[]          @relation("AuditActor")
+  auditAsTarget      AuditLog[]          @relation("AuditTarget")
   sentMessages       Message[]
-  auditAsActor       AuditLog[]       @relation("AuditActor")
-  auditAsTarget      AuditLog[]       @relation("AuditTarget")
+  notifications      Notification[]
+  position           Position?           @relation(fields: [positionId], references: [id])
+  updatedCredentials UserCredential[]    @relation("CredentialEditor")
+  credentials        UserCredential[]    @relation("CredentialOwner")
+  radarCards         RadarCard[]
+  ifoProposals       IfoProposal[]       @relation("IfoProposer")
+  workSchedule       WorkScheduleEntry[]
+  scheduleTemplates  ScheduleTemplate[]
+  schedulePeriods    SchedulePeriod[]
 
   @@index([role, isDeleted])
+  @@index([positionId], map: "User_positionId_fkey")
 }
 
 /// Справочник должностей
@@ -56,50 +48,125 @@ model Position {
   isArchived Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  users User[]
+  users      User[]
 }
 
 /// Справочник удостоверений: название и срок действия
 model Credential {
-  id             Int      @id @default(autoincrement())
-  name           String   @db.VarChar(200)
-  validityMonths Int
-  sortOrder      Int      @default(0)
-  isArchived     Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
+  id              Int              @id @default(autoincrement())
+  name            String           @db.VarChar(200)
+  validityMonths  Int
+  sortOrder       Int              @default(0)
+  isArchived      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   userCredentials UserCredential[]
 }
 
 /// Конкретное удостоверение конкретного сотрудника
 model UserCredential {
-  id                  Int       @id @default(autoincrement())
+  id                  Int        @id @default(autoincrement())
   userId              Int
   credentialId        Int
-  number              String?   @db.VarChar(100)
-  issueDate           DateTime? @db.Date
-  // Вычисляется сервером: дата выдачи + срок из справочника на момент ввода
-  expiryDate          DateTime? @db.Date
-  comment             String?   @db.Text
-  isMarkedForDeletion Boolean   @default(false)
-  // Фото или скан удостоверения: имя файла в каталоге uploads и его MIME-тип
-  photoFile           String?   @db.VarChar(100)
-  photoMime           String?   @db.VarChar(50)
+  number              String?    @db.VarChar(100)
+  issueDate           DateTime?  @db.Date
+  expiryDate          DateTime?  @db.Date
+  comment             String?    @db.Text
+  isMarkedForDeletion Boolean    @default(false)
   updatedById         Int?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-
-  user       User       @relation("CredentialOwner", fields: [userId], references: [id])
-  credential Credential @relation(fields: [credentialId], references: [id])
-  updatedBy  User?      @relation("CredentialEditor", fields: [updatedById], references: [id])
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  photoFile           String?    @db.VarChar(100)
+  photoMime           String?    @db.VarChar(50)
+  credential          Credential @relation(fields: [credentialId], references: [id])
+  updatedBy           User?      @relation("CredentialEditor", fields: [updatedById], references: [id])
+  user                User       @relation("CredentialOwner", fields: [userId], references: [id])
 
   @@unique([userId, credentialId])
   @@index([expiryDate])
+  @@index([credentialId], map: "UserCredential_credentialId_fkey")
+  @@index([updatedById], map: "UserCredential_updatedById_fkey")
 }
 
-/// Уведомления и входящие сообщения. Для сообщения строка = получатель
+/// Карта безопасности «Радар»
+model RadarCard {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  customerName    String   @db.VarChar(200)
+  mainInfo        String   @db.Text
+  event           String   @db.Text
+  actionsTaken    String   @db.Text
+  incidentDate    DateTime @db.Date
+  requiredActions String?  @db.Text
+  stoppedWork     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([incidentDate])
+  @@index([userId, incidentDate])
+}
+
+model IfoProposal {
+  id              Int      @id @default(autoincrement())
+  proposerId      Int
+  title           String   @db.VarChar(300)
+  problem         String   @db.Text
+  proposal        String   @db.Text
+  expectedBenefit String   @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  proposer        User     @relation("IfoProposer", fields: [proposerId], references: [id])
+
+  @@index([createdAt])
+  @@index([proposerId, createdAt])
+}
+
+model ScheduleTemplate {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  name       String    @db.VarChar(200)
+  workDays   Int
+  restDays   Int
+  cycleStart DateTime  @db.Date
+  validFrom  DateTime  @db.Date
+  validTo    DateTime? @db.Date
+  isActive   Boolean   @default(true)
+  version    Int       @default(1)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, validFrom])
+}
+
+model SchedulePeriod {
+  id        Int                  @id @default(autoincrement())
+  userId    Int
+  type      SchedulePeriodType
+  status    SchedulePeriodStatus @default(PLANNED)
+  startDate DateTime             @db.Date
+  endDate   DateTime             @db.Date
+  note      String?              @db.Text
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate, endDate])
+}
+
+model WorkScheduleEntry {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  date      DateTime      @db.Date
+  status    WorkDayStatus
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt DateTime      @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
 model Notification {
   id          Int              @id @default(autoincrement())
   userId      Int
@@ -109,29 +176,28 @@ model Notification {
   body        String           @db.Text
   link        String?          @db.VarChar(300)
   messageId   Int?
-  // Защита от дублей автоуведомлений
-  dedupKey    String?          @unique @db.VarChar(191)
+  dedupKey    String?          @unique
   readAt      DateTime?
-  // Пользователь убрал уведомление из списка (запись остаётся для статистики прочтений)
-  dismissedAt DateTime?
   createdAt   DateTime         @default(now())
-
-  user    User     @relation(fields: [userId], references: [id])
-  message Message? @relation(fields: [messageId], references: [id])
+  dismissedAt DateTime?
+  message     Message?         @relation(fields: [messageId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
 
   @@index([userId, readAt])
+  @@index([messageId], map: "Notification_messageId_fkey")
 }
 
 model Message {
-  id          Int      @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   senderId    Int
-  subject     String   @db.VarChar(200)
-  body        String   @db.Text
-  isBroadcast Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  subject     String         @db.VarChar(200)
+  body        String         @db.Text
+  isBroadcast Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  sender      User           @relation(fields: [senderId], references: [id])
+  deliveries  Notification[]
 
-  sender     User           @relation(fields: [senderId], references: [id])
-  deliveries Notification[]
+  @@index([senderId], map: "Message_senderId_fkey")
 }
 
 model AuditLog {
@@ -143,15 +209,51 @@ model AuditLog {
   targetUserId Int?
   diff         Json?
   createdAt    DateTime @default(now())
-
-  actor      User? @relation("AuditActor", fields: [actorId], references: [id])
-  targetUser User? @relation("AuditTarget", fields: [targetUserId], references: [id])
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id])
+  targetUser   User?    @relation("AuditTarget", fields: [targetUserId], references: [id])
 
   @@index([createdAt])
   @@index([targetUserId])
+  @@index([actorId], map: "AuditLog_actorId_fkey")
 }
 
 model Setting {
   key   String @id @db.VarChar(50)
   value String @db.VarChar(200)
+}
+
+enum SchedulePeriodType {
+  WORK
+  REST
+  VACATION
+  SICK_LEAVE
+  ABSENCE
+  UNDETERMINED
+}
+
+enum SchedulePeriodStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkDayStatus {
+  WORK
+  FREE_SHIFT
+  TRAVEL
+  SICK_LEAVE
+  VACATION
+  TRAINING
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum NotificationKind {
+  EXPIRY
+  MESSAGE
+  DIGEST
 }

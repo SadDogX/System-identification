@@ -1,0 +1,24 @@
+import { useState } from 'react';
+import type { ScheduleTemplateDto, SchedulePeriodDto, UserDto } from '@app/shared';
+import { api, errorMessage } from '../../core/api.ts';
+import { useAction, useQuery, invalidate } from '../../core/data.ts';
+import { Alert, Dialog, PageHeader, SelectField, TextArea, TextField } from '@app/shared/ui';
+
+export function ScheduleDataPage({ kind }: { kind: 'templates' | 'periods' }) {
+  const isTemplates = kind === 'templates';
+  const [open, setOpen] = useState(false);
+  const users = useQuery('schedule:users', () => api.get<UserDto[]>('/admin/work-schedule/users'));
+  const templates = useQuery('schedule:templates', () => api.get<ScheduleTemplateDto[]>('/admin/work-schedule/templates'));
+  const periods = useQuery('schedule:periods', () => api.get<SchedulePeriodDto[]>('/admin/work-schedule/periods'));
+  const [values, setValues] = useState({ userId: '', name: '', workDays: '15', restDays: '15', cycleStart: new Date().toISOString().slice(0, 10), validFrom: new Date().toISOString().slice(0, 10), validTo: '', type: 'WORK', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), note: '' });
+  const set = (key: keyof typeof values, value: string) => setValues((v) => ({ ...v, [key]: value }));
+  const save = useAction(() => isTemplates ? api.post('/admin/work-schedule/templates', { userId: Number(values.userId), name: values.name, workDays: Number(values.workDays), restDays: Number(values.restDays), cycleStart: values.cycleStart, validFrom: values.validFrom, validTo: values.validTo || undefined }) : api.post('/admin/work-schedule/periods', { userId: Number(values.userId), type: values.type, startDate: values.startDate, endDate: values.endDate, note: values.note || undefined }), { onSuccess: () => { invalidate('schedule'); setOpen(false); } });
+  return <><PageHeader title={isTemplates ? 'Шаблоны вахт' : 'Плановые периоды'} subtitle={isTemplates ? 'Циклы работы и отдыха сотрудников' : 'Периоды работы, отдыха и отсутствий'} actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Добавить</button>} />
+    {isTemplates ? <div className="stack">{templates.data?.map((item) => <article className="panel pad" key={item.id}><b>{item.name}</b><div className="muted">{item.user?.fullName} · {item.workDays} дней работы / {item.restDays} дней отдыха · с {item.validFrom}</div></article>)}{templates.data?.length === 0 && <div className="empty">Шаблонов пока нет</div>}</div> : <div className="stack">{periods.data?.map((item) => <article className="panel pad" key={item.id}><b>{item.user?.fullName}</b><div>{item.type}: {item.startDate} — {item.endDate}</div>{item.note && <div className="muted">{item.note}</div>}</article>)}{periods.data?.length === 0 && <div className="empty">Периодов пока нет</div>}</div>}
+    <Dialog open={open} wide title={isTemplates ? 'Новый шаблон вахты' : 'Новый плановый период'} onClose={() => setOpen(false)} onSubmit={() => save.run()} actions={<><button type="button" className="btn" onClick={() => setOpen(false)}>Отмена</button><button type="submit" className="btn btn-primary" disabled={save.pending}>Сохранить</button></>}>
+      <SelectField label="Сотрудник *" value={values.userId} onChange={(e) => set('userId', e.target.value)}><option value="">Выберите сотрудника</option>{users.data?.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</SelectField>
+      {isTemplates ? <><TextField label="Название *" value={values.name} onChange={(e) => set('name', e.target.value)} /><div className="form-grid"><TextField label="Дней работы" type="number" value={values.workDays} onChange={(e) => set('workDays', e.target.value)} /><TextField label="Дней отдыха" type="number" value={values.restDays} onChange={(e) => set('restDays', e.target.value)} /></div><div className="form-grid"><TextField label="Начало цикла" type="date" value={values.cycleStart} onChange={(e) => set('cycleStart', e.target.value)} /><TextField label="Действует с" type="date" value={values.validFrom} onChange={(e) => set('validFrom', e.target.value)} /></div><TextField label="Действует по" type="date" value={values.validTo} onChange={(e) => set('validTo', e.target.value)} /></> : <><SelectField label="Тип периода" value={values.type} onChange={(e) => set('type', e.target.value)}>{['WORK','REST','VACATION','SICK_LEAVE','ABSENCE','UNDETERMINED'].map((x) => <option key={x}>{x}</option>)}</SelectField><div className="form-grid"><TextField label="Дата начала" type="date" value={values.startDate} onChange={(e) => set('startDate', e.target.value)} /><TextField label="Дата окончания" type="date" value={values.endDate} onChange={(e) => set('endDate', e.target.value)} /></div><TextArea label="Комментарий" rows={3} value={values.note} onChange={(e) => set('note', e.target.value)} /></>}
+      {save.error ? <Alert>{errorMessage(save.error)}</Alert> : null}
+    </Dialog>
+  </>;
+}
