@@ -22,6 +22,8 @@ export function toUserDto(user: UserWithPosition): UserDto {
     position: user.position?.name ?? null,
     phone: user.phone,
     email: user.email,
+    photoMime: user.photoFile ? user.photoMime : null,
+    photoFile: user.photoFile,
     isActive: user.isActive,
     mustChangePassword: user.mustChangePassword,
     uiSettings: ui.ok ? ui.value : {},

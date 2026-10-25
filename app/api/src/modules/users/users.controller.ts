@@ -16,7 +16,12 @@ export async function options(_req: Request, res: Response) {
   res.json(await users.listOptions());
 }
 
-export async function getOne(req: Request, res: Response) {
+export async function archive(req: Request, res: Response) { res.json(await users.archive(validQuery(req))); }
+export async function dependencies(req: Request, res: Response) { res.json(await users.dependencies(idParam(req))); }
+export async function unlock(req: Request, res: Response) { res.json(await users.unlock(currentUser(req), idParam(req))); }
+export async function restore(req: Request, res: Response) { res.json(await users.restore(currentUser(req), idParam(req))); }
+
+export async function getOne(req: Request, res: Response) {
   const id = idParam(req);
   const [user, credentials] = await Promise.all([users.getById(id), adminListForUser(id)]);
   res.json({ user, credentials });

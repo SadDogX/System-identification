@@ -1,5 +1,5 @@
 // Режим разработки: пересборка клиента (esbuild --watch) + сервер с перезапуском (node --watch).
-// Открывать http://localhost:4300 — клиент раздаёт тот же сервер.
+// Открывать http://localhost:5500 — клиент раздаёт тот же сервер.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 

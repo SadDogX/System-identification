@@ -38,7 +38,7 @@ admin.post('/shift-partners/generate', validate(shiftPartnersSchema), h(async (r
   const rotationWeeks = Number(input.rotationDays);
   const workDays = rotationWeeks * 7;
   const cycleDays = workDays * 2;
-  const start = new Date(Date.UTC(input.year, 0, 1));
+  const start = toDate(input.startDate);
   const end = new Date(Date.UTC(input.year + 1, 0, 1));
   const rows: { userId: number; date: Date; status: (typeof WORK_DAY_STATUSES)[number] }[] = [];
   for (let date = new Date(start); date < end; date.setUTCDate(date.getUTCDate() + 1)) {

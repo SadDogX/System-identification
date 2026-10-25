@@ -185,6 +185,7 @@ export const workScheduleQuerySchema = object({ userId: optional(int()), year: o
 
 export const shiftPartnersSchema = object({
   year: int({ min: 2020, max: 2100 }),
+  startDate: isoDate,
   userAId: int({ min: 1 }),
   userBId: int({ min: 1 }),
   rotationDays: oneOf(['5', '4'] as const),

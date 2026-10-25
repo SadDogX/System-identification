@@ -130,6 +130,37 @@ export async function listOptions() {
   });
 }
 
+export async function archive(query: ListQuery): Promise<Paginated<UserListItemDto>> {
+  return list({ ...query, filter: query.filter, page: query.page, pageSize: query.pageSize, q: query.q, positionId: query.positionId } as ListQuery & { includeDeleted: true });
+}
+
+export async function dependencies(id: number) {
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true, fullName: true, isDeleted: true } });
+  if (!user) throw notFound('Пользователь не найден');
+  const [credentials, notifications, messages, audit, schedules, radarCards, ifo] = await Promise.all([
+    prisma.userCredential.count({ where: { userId: id } }), prisma.notification.count({ where: { userId: id } }),
+    prisma.message.count({ where: { senderId: id } }), prisma.auditLog.count({ where: { OR: [{ actorId: id }, { targetUserId: id }] } }),
+    prisma.workScheduleEntry.count({ where: { userId: id } }), prisma.radarCard.count({ where: { userId: id } }), prisma.ifoProposal.count({ where: { proposerId: id } }),
+  ]);
+  return { user, dependencies: { credentials, notifications, messages, audit, schedules, radarCards, ifo } };
+}
+
+export async function unlock(actor: User, id: number) {
+  await findActiveUser(id);
+  const updated = await prisma.user.update({ where: { id }, data: { isActive: true, tokenVersion: { increment: 1 } }, include: withPosition });
+  await audit(prisma, { actorId: actor.id, action: 'user.unlock', entityType: 'User', entityId: id, targetUserId: id });
+  return toUserDto(updated);
+}
+
+export async function restore(actor: User, id: number) {
+  const user = await prisma.user.findUnique({ where: { id }, include: withPosition });
+  if (!user) throw notFound('Пользователь не найден');
+  const updated = await prisma.user.update({ where: { id }, data: { isDeleted: false, isActive: true, tokenVersion: { increment: 1 } }, include: withPosition });
+  await audit(prisma, { actorId: actor.id, action: 'user.restore', entityType: 'User', entityId: id, targetUserId: id });
+  return toUserDto(updated);
+}
+
+
 export async function getById(id: number) {
   return toUserDto(await findActiveUser(id));
 }
@@ -279,3 +310,4 @@ export async function updateUiSettings(user: User, input: UiSettings) {
   });
   return toUserDto(updated);
 }
+

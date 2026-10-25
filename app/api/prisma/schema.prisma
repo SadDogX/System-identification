@@ -15,6 +15,8 @@ model User {
   role               Role                @default(USER)
   phone              String?             @db.VarChar(50)
   email              String?             @db.VarChar(150)
+  photoFile          String?             @db.VarChar(100)
+  photoMime          String?             @db.VarChar(50)
   isActive           Boolean             @default(true)
   isDeleted          Boolean             @default(false)
   mustChangePassword Boolean             @default(true)

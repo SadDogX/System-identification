@@ -2,7 +2,7 @@ import type { Role, UiSettings, WorkDayStatus } from './schemas.ts';
 import type { CredentialStatus, StatusThresholds } from './status.ts';
 
 export interface Paginated<T> { items: T[]; total: number; page: number; pageSize: number }
-export interface UserDto { id: number; fullName: string; login: string; role: Role; positionId: number | null; position: string | null; phone: string | null; email: string | null; isActive: boolean; mustChangePassword: boolean; uiSettings: UiSettings; createdAt: string }
+export interface UserDto { id: number; fullName: string; login: string; role: Role; positionId: number | null; position: string | null; phone: string | null; email: string | null; photoMime: string | null; photoFile: string | null; isActive: boolean; mustChangePassword: boolean; uiSettings: UiSettings; createdAt: string }
 export interface UserListItemDto extends UserDto { counts: Record<CredentialStatus, number> & { total: number } }
 export interface AuthResponse { accessToken: string; user: UserDto; settings: AppSettingsDto }
 export interface AppSettingsDto extends StatusThresholds { timezone: string }
