@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../src/core/password.ts';
-
-const prisma = new PrismaClient();
+import { prisma } from '../src/core/db.ts';
+import { ensureEmployeeAndLegacyRole, initializeOrganizationCatalog } from '../src/modules/organization/organization.service.ts';
 
 const CATALOG = [
   { name: 'Удостоверение по охране труда', validityMonths: 36, sortOrder: 1 },
@@ -11,12 +10,13 @@ const CATALOG = [
 ];
 
 async function main() {
+  await initializeOrganizationCatalog();
   const login = process.env.SEED_ADMIN_LOGIN ?? 'admin';
   const password = process.env.SEED_ADMIN_PASSWORD ?? 'admin12345';
 
   const existing = await prisma.user.findUnique({ where: { login } });
   if (!existing) {
-    await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         fullName: 'Администратор',
         login,
@@ -26,7 +26,12 @@ async function main() {
         mustChangePassword: true,
       },
     });
+    await prisma.$transaction((tx) => ensureEmployeeAndLegacyRole(tx, user));
     console.log(`Создан администратор: ${login}`);
+  }
+
+  for (const user of await prisma.user.findMany()) {
+    await prisma.$transaction((tx) => ensureEmployeeAndLegacyRole(tx, user));
   }
 
   if ((await prisma.credential.count()) === 0) {

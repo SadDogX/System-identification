@@ -11,12 +11,15 @@ interface NavGroup { label: string; icon: IconName; items?: NavItem[]; subgroups
 
 const ADMIN_ITEMS: NavItem[] = [
   { to: '/admin/dashboard', label: 'Панель управления', icon: 'dashboard' },
+  { to: '/admin/organization', label: 'Оргструктура TRS / R&M', icon: 'people' },
   { to: '/admin/overview', label: 'Список удостоверений ', icon: 'overview' },
   { to: '/admin/employees', label: 'Статус сотрудника', icon: 'people' },
   { to: '/admin/credentials', label: 'Тайм лайн', icon: 'badge' },
 ];
 const USER_ITEMS: NavItem[] = [
   { to: '/user/dashboard', label: 'Панель управления', icon: 'dashboard' },
+  { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
+  { to: '/user/work-execution', label: 'Договоры и работы', icon: 'doneAll' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
   { to: '/user/profile', label: 'Профиль', icon: 'person' },
 ];

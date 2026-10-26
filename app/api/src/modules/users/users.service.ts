@@ -18,6 +18,7 @@ import { hashPassword } from '../auth/auth.service.ts';
 import { ensureUserCredentials } from '../credentials/credentials.service.ts';
 import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
+import { ensureEmployeeAndLegacyRole, syncLegacySystemRole, updateEmployeePosition } from '../organization/organization.service.ts';
 
 const PROFILE_FIELDS = ['fullName', 'role', 'positionId', 'phone', 'email', 'isActive'] as const;
 /** В журнал пишем название должности, а не её id. */
@@ -187,6 +188,7 @@ export async function create(actor: User, input: CreateUserRequest) {
       },
       include: withPosition,
     });
+    await ensureEmployeeAndLegacyRole(tx, created, actor.id);
     // Удостоверения ведутся только у сотрудников
     if (created.role === 'USER') await ensureUserCredentials(tx, created.id);
     await audit(tx, {
@@ -227,6 +229,12 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
 
   const user = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({ where: { id }, data, include: withPosition });
+    if (input.role !== undefined && input.role !== existing.role) {
+      await syncLegacySystemRole(tx, updated, actor.id);
+    }
+    if (input.positionId !== undefined && input.positionId !== existing.positionId) {
+      await updateEmployeePosition(tx, updated, input.positionId, actor.id);
+    }
     if (updated.role === 'USER') await ensureUserCredentials(tx, id);
     await audit(tx, {
       actorId: actor.id,
@@ -310,4 +318,3 @@ export async function updateUiSettings(user: User, input: UiSettings) {
   });
   return toUserDto(updated);
 }
-

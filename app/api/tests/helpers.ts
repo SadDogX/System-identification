@@ -5,6 +5,7 @@ import type { Role } from '@prisma/client';
 import { createApp } from '../src/app.ts';
 import { prisma } from '../src/core/db.ts';
 import { hashPassword } from '../src/core/password.ts';
+import { ensureEmployeeAndLegacyRole, initializeOrganizationCatalog } from '../src/modules/organization/organization.service.ts';
 
 export const PASSWORD = 'password123';
 const passwordHash = await hashPassword(PASSWORD);
@@ -18,6 +19,7 @@ export async function startServer() {
     throw new Error('Тесты запускаются только на тестовой БД (имя должно содержать _test)');
   }
   execSync('npx prisma db push --force-reset --skip-generate', { stdio: 'ignore', env: process.env });
+  await initializeOrganizationCatalog();
   server = createApp().listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -59,6 +61,23 @@ export async function resetDb() {
   await prisma.notification.deleteMany();
   await prisma.message.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.workExecutionResponsible.deleteMany();
+  await prisma.workExecution.deleteMany();
+  await prisma.contractWorkPermission.deleteMany();
+  await prisma.addendumWorkPermission.deleteMany();
+  await prisma.wellContractBasis.deleteMany();
+  await prisma.workType.deleteMany();
+  await prisma.contractAddendum.deleteMany();
+  await prisma.contract.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.mineCoordinatorAssignment.deleteMany();
+  await prisma.well.deleteMany();
+  await prisma.mine.deleteMany();
+  await prisma.organizationChange.deleteMany();
+  await prisma.employeeAssignment.deleteMany();
+  await prisma.base.deleteMany();
+  await prisma.userSystemRole.deleteMany();
+  await prisma.employee.deleteMany();
   await prisma.userCredential.deleteMany();
   await prisma.credential.deleteMany();
   await prisma.user.deleteMany();
@@ -70,7 +89,7 @@ let counter = 0;
 
 export async function createUser(role: Role = 'USER', overrides: { isActive?: boolean } = {}) {
   counter += 1;
-  return prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       fullName: `${role === 'ADMIN' ? 'Админ' : 'Сотрудник'} ${counter}`,
       login: `${role.toLowerCase()}${counter}`,
@@ -80,6 +99,8 @@ export async function createUser(role: Role = 'USER', overrides: { isActive?: bo
       ...overrides,
     },
   });
+  await prisma.$transaction((tx) => ensureEmployeeAndLegacyRole(tx, user));
+  return user;
 }
 
 export async function tokenFor(login: string): Promise<string> {

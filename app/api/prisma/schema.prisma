@@ -8,35 +8,47 @@ datasource db {
 }
 
 model User {
-  id                 Int                 @id @default(autoincrement())
-  fullName           String              @db.VarChar(200)
-  login              String              @unique @db.VarChar(50)
-  passwordHash       String              @db.VarChar(255)
-  role               Role                @default(USER)
-  phone              String?             @db.VarChar(50)
-  email              String?             @db.VarChar(150)
-  photoFile          String?             @db.VarChar(100)
-  photoMime          String?             @db.VarChar(50)
-  isActive           Boolean             @default(true)
-  isDeleted          Boolean             @default(false)
-  mustChangePassword Boolean             @default(true)
-  tokenVersion       Int                 @default(0)
-  uiSettings         Json?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  positionId         Int?
-  auditAsActor       AuditLog[]          @relation("AuditActor")
-  auditAsTarget      AuditLog[]          @relation("AuditTarget")
-  sentMessages       Message[]
-  notifications      Notification[]
-  position           Position?           @relation(fields: [positionId], references: [id])
-  updatedCredentials UserCredential[]    @relation("CredentialEditor")
-  credentials        UserCredential[]    @relation("CredentialOwner")
-  radarCards         RadarCard[]
-  ifoProposals       IfoProposal[]       @relation("IfoProposer")
-  workSchedule       WorkScheduleEntry[]
-  scheduleTemplates  ScheduleTemplate[]
-  schedulePeriods    SchedulePeriod[]
+  id                                Int                         @id @default(autoincrement())
+  fullName                          String                      @db.VarChar(200)
+  login                             String                      @unique @db.VarChar(50)
+  passwordHash                      String                      @db.VarChar(255)
+  role                              Role                        @default(USER)
+  phone                             String?                     @db.VarChar(50)
+  email                             String?                     @db.VarChar(150)
+  photoFile                         String?                     @db.VarChar(100)
+  photoMime                         String?                     @db.VarChar(50)
+  isActive                          Boolean                     @default(true)
+  isDeleted                         Boolean                     @default(false)
+  mustChangePassword                Boolean                     @default(true)
+  tokenVersion                      Int                         @default(0)
+  uiSettings                        Json?
+  createdAt                         DateTime                    @default(now())
+  updatedAt                         DateTime                    @updatedAt
+  positionId                        Int?
+  auditAsActor                      AuditLog[]                  @relation("AuditActor")
+  auditAsTarget                     AuditLog[]                  @relation("AuditTarget")
+  sentMessages                      Message[]
+  notifications                     Notification[]
+  position                          Position?                   @relation(fields: [positionId], references: [id])
+  updatedCredentials                UserCredential[]            @relation("CredentialEditor")
+  credentials                       UserCredential[]            @relation("CredentialOwner")
+  radarCards                        RadarCard[]
+  ifoProposals                      IfoProposal[]               @relation("IfoProposer")
+  workSchedule                      WorkScheduleEntry[]
+  scheduleTemplates                 ScheduleTemplate[]
+  schedulePeriods                   SchedulePeriod[]
+  employee                          Employee?
+  systemRoles                       UserSystemRole[]            @relation("AccountSystemRoles")
+  grantedSystemRoles                UserSystemRole[]            @relation("SystemRoleGrantActor")
+  createdAssignments                EmployeeAssignment[]        @relation("AssignmentCreator")
+  createdOrgChanges                 OrganizationChange[]        @relation("OrgChangeActor")
+  createdBases                      Base[]                      @relation("BaseCreator")
+  createdMines                      Mine[]                      @relation("MineCreator")
+  createdMineCoordinatorAssignments MineCoordinatorAssignment[] @relation("MineCoordinatorAssignmentCreator")
+  createdWells                      Well[]                      @relation("WellCreator")
+  createdContracts                  Contract[]                  @relation("ContractCreator")
+  createdAddenda                    ContractAddendum[]          @relation("AddendumCreator")
+  createdWork                       WorkExecution[]             @relation("WorkCreator")
 
   @@index([role, isDeleted])
   @@index([positionId], map: "User_positionId_fkey")
@@ -44,13 +56,396 @@ model User {
 
 /// Справочник должностей
 model Position {
+  id          Int                  @id @default(autoincrement())
+  name        String               @unique @db.VarChar(150)
+  sortOrder   Int                  @default(0)
+  isArchived  Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  users       User[]
+  assignments EmployeeAssignment[]
+}
+
+/// Existing User rows remain the authentication account/API compatibility boundary.
+/// Employee is the distinct personnel card; relationships are never inferred from Position.
+model Employee {
+  id              Int                         @id @default(autoincrement())
+  userId          Int                         @unique
+  employeeNumber  String?                     @unique @db.VarChar(50)
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  user            User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignments     EmployeeAssignment[]        @relation("AssignmentEmployee")
+  supervised      EmployeeAssignment[]        @relation("AssignmentSupervisor")
+  mineAssignments MineCoordinatorAssignment[]
+  responsibleFor  WorkExecutionResponsible[]
+  changes         OrganizationChange[]
+
+  @@index([userId])
+}
+
+model Base {
+  id          Int                  @id @default(autoincrement())
+  name        String               @unique @db.VarChar(150)
+  code        String?              @unique @db.VarChar(50)
+  isActive    Boolean              @default(true)
+  createdById Int?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  createdBy   User?                @relation("BaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  assignments EmployeeAssignment[]
+  mines       Mine[]
+  contracts   Contract[]
+
+  @@index([isActive, name])
+}
+
+model AssignmentStatus {
+  id          Int                  @id @default(autoincrement())
+  code        String               @unique @db.VarChar(50)
+  name        String               @db.VarChar(100)
+  isActive    Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  assignments EmployeeAssignment[]
+
+  @@index([isActive, sortOrder])
+}
+
+model SystemRole {
+  id        Int              @id @default(autoincrement())
+  code      String           @unique @db.VarChar(50)
+  name      String           @db.VarChar(100)
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  users     UserSystemRole[]
+
+  @@index([isActive, code])
+}
+
+model UserSystemRole {
+  id                 Int        @id @default(autoincrement())
+  userId             Int
+  systemRoleId       Int
+  currentUserRoleKey String?    @unique @db.VarChar(100)
+  assignedAt         DateTime   @default(now())
+  revokedAt          DateTime?
+  assignedById       Int?
+  user               User       @relation("AccountSystemRoles", fields: [userId], references: [id], onDelete: Restrict)
+  systemRole         SystemRole @relation(fields: [systemRoleId], references: [id], onDelete: Restrict)
+  assignedBy         User?      @relation("SystemRoleGrantActor", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([systemRoleId, userId])
+  @@index([userId, revokedAt])
+  @@index([assignedById, assignedAt])
+}
+
+enum OrganizationTrack {
+  TRS
+  R_AND_M
+  UNASSIGNED
+}
+
+model EmployeeAssignment {
+  id                   Int               @id @default(autoincrement())
+  employeeId           Int
+  positionId           Int?
+  baseId               Int?
+  supervisorEmployeeId Int?
+  statusId             Int
+  track                OrganizationTrack @default(UNASSIGNED)
+  startsAt             DateTime          @db.Date
+  endsAt               DateTime?         @db.Date
+  activeEmployeeId     Int?              @unique
+  reason               String?           @db.Text
+  operationId          String            @db.VarChar(36)
+  createdById          Int?
+  createdAt            DateTime          @default(now())
+  employee             Employee          @relation("AssignmentEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  position             Position?         @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  base                 Base?             @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  supervisor           Employee?         @relation("AssignmentSupervisor", fields: [supervisorEmployeeId], references: [id], onDelete: Restrict)
+  status               AssignmentStatus  @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdBy            User?             @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, startsAt, endsAt])
+  @@index([baseId, track, startsAt, endsAt])
+  @@index([supervisorEmployeeId, startsAt, endsAt])
+  @@index([positionId])
+  @@index([statusId])
+  @@index([operationId])
+}
+
+model OrganizationChange {
+  id          Int      @id @default(autoincrement())
+  employeeId  Int
+  actorId     Int?
+  action      String   @db.VarChar(50)
+  previous    Json?
+  next        Json?
+  reason      String?  @db.Text
+  operationId String   @db.VarChar(36)
+  createdAt   DateTime @default(now())
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  actor       User?    @relation("OrgChangeActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([operationId])
+}
+
+model Mine {
+  id                     Int                         @id @default(autoincrement())
+  baseId                 Int
+  name                   String                      @db.VarChar(150)
+  code                   String?                     @db.VarChar(50)
+  isActive               Boolean                     @default(true)
+  createdById            Int?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  base                   Base                        @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  createdBy              User?                       @relation("MineCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  coordinatorAssignments MineCoordinatorAssignment[]
+  wells                  Well[]
+
+  @@unique([baseId, name])
+  @@unique([baseId, code])
+  @@index([baseId, isActive])
+}
+
+model MineCoordinatorAssignment {
+  id            Int       @id @default(autoincrement())
+  mineId        Int
+  coordinatorId Int
+  currentMineId Int?      @unique
+  startsAt      DateTime  @db.Date
+  endsAt        DateTime? @db.Date
+  operationId   String    @db.VarChar(36)
+  createdById   Int?
+  createdAt     DateTime  @default(now())
+  mine          Mine      @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  coordinator   Employee  @relation(fields: [coordinatorId], references: [id], onDelete: Restrict)
+  createdBy     User?     @relation("MineCoordinatorAssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([mineId, startsAt, endsAt])
+  @@index([coordinatorId, startsAt, endsAt])
+  @@index([operationId])
+}
+
+model Well {
+  id            Int                 @id @default(autoincrement())
+  mineId        Int
+  name          String              @db.VarChar(150)
+  code          String?             @db.VarChar(50)
+  isActive      Boolean             @default(true)
+  createdById   Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  mine          Mine                @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  createdBy     User?               @relation("WellCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  contractBases WellContractBasis[]
+  executions    WorkExecution[]
+
+  @@unique([mineId, name])
+  @@unique([mineId, code])
+  @@index([mineId, isActive])
+}
+
+model Customer {
+  id        Int        @id @default(autoincrement())
+  name      String     @db.VarChar(200)
+  code      String?    @unique @db.VarChar(50)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  contracts Contract[]
+
+  @@index([name, isActive])
+}
+
+model ContractStatus {
+  id         Int        @id @default(autoincrement())
+  code       String     @unique @db.VarChar(50)
+  name       String     @db.VarChar(100)
+  allowsWork Boolean    @default(false)
+  isActive   Boolean    @default(true)
+  sortOrder  Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  contracts  Contract[]
+}
+
+model Contract {
+  id          Int                      @id @default(autoincrement())
+  customerId  Int
+  baseId      Int
+  statusId    Int
+  number      String                   @db.VarChar(100)
+  startsAt    DateTime                 @db.Date
+  endsAt      DateTime                 @db.Date
+  createdById Int?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  customer    Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  base        Base                     @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  status      ContractStatus           @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdBy   User?                    @relation("ContractCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  addenda     ContractAddendum[]
+  wellBases   WellContractBasis[]
+  permissions ContractWorkPermission[]
+  executions  WorkExecution[]
+
+  @@unique([baseId, number])
+  @@index([customerId, statusId])
+  @@index([baseId, startsAt, endsAt])
+  @@index([statusId, startsAt, endsAt])
+}
+
+model AddendumStatus {
+  id         Int                @id @default(autoincrement())
+  code       String             @unique @db.VarChar(50)
+  name       String             @db.VarChar(100)
+  allowsWork Boolean            @default(false)
+  isActive   Boolean            @default(true)
+  sortOrder  Int                @default(0)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  addenda    ContractAddendum[]
+}
+
+model ContractAddendum {
+  id              Int                      @id @default(autoincrement())
+  contractId      Int
+  statusId        Int
+  number          String                   @db.VarChar(100)
+  startsAt        DateTime                 @db.Date
+  endsAt          DateTime                 @db.Date
+  description     String                   @db.Text
+  createdById     Int?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  contract        Contract                 @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  status          AddendumStatus           @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdBy       User?                    @relation("AddendumCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  wellBases       WellContractBasis[]
+  workPermissions AddendumWorkPermission[]
+  executions      WorkExecution[]
+
+  @@unique([contractId, number])
+  @@index([contractId, startsAt, endsAt])
+  @@index([statusId, startsAt, endsAt])
+}
+
+model AddendumWorkPermission {
+  id         Int              @id @default(autoincrement())
+  addendumId Int
+  workTypeId Int
+  isAllowed  Boolean
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  addendum   ContractAddendum @relation(fields: [addendumId], references: [id], onDelete: Restrict)
+  workType   WorkType         @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([addendumId, workTypeId])
+  @@index([workTypeId, isAllowed])
+}
+
+model WellContractBasis {
+  id            Int               @id @default(autoincrement())
+  wellId        Int
+  contractId    Int?
+  addendumId    Int?
+  currentWellId Int?              @unique
+  startsAt      DateTime          @db.Date
+  endsAt        DateTime?         @db.Date
+  operationId   String            @db.VarChar(36)
+  createdAt     DateTime          @default(now())
+  well          Well              @relation(fields: [wellId], references: [id], onDelete: Restrict)
+  contract      Contract?         @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  addendum      ContractAddendum? @relation(fields: [addendumId], references: [id], onDelete: Restrict)
+
+  @@index([wellId, startsAt, endsAt])
+  @@index([contractId])
+  @@index([addendumId])
+  @@index([operationId])
+}
+
+model WorkType {
+  id                         Int                      @id @default(autoincrement())
+  code                       String                   @unique @db.VarChar(50)
+  name                       String                   @db.VarChar(150)
+  requiresContractPermission Boolean                  @default(true)
+  isActive                   Boolean                  @default(true)
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  contractPermissions        ContractWorkPermission[]
+  addendumPermissions        AddendumWorkPermission[]
+  executions                 WorkExecution[]
+}
+
+model ContractWorkPermission {
   id         Int      @id @default(autoincrement())
-  name       String   @unique @db.VarChar(150)
-  sortOrder  Int      @default(0)
-  isArchived Boolean  @default(false)
+  contractId Int
+  workTypeId Int
+  isAllowed  Boolean
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  users      User[]
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  workType   WorkType @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([contractId, workTypeId])
+  @@index([workTypeId, isAllowed])
+}
+
+model WorkStatus {
+  id         Int             @id @default(autoincrement())
+  code       String          @unique @db.VarChar(50)
+  name       String          @db.VarChar(100)
+  isActive   Boolean         @default(true)
+  sortOrder  Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  executions WorkExecution[]
+}
+
+model WorkExecution {
+  id          Int                        @id @default(autoincrement())
+  wellId      Int
+  workTypeId  Int
+  contractId  Int
+  addendumId  Int?
+  statusId    Int
+  performedAt DateTime                   @db.Date
+  description String?                    @db.Text
+  createdById Int?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  well        Well                       @relation(fields: [wellId], references: [id], onDelete: Restrict)
+  workType    WorkType                   @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+  contract    Contract                   @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  addendum    ContractAddendum?          @relation(fields: [addendumId], references: [id], onDelete: Restrict)
+  status      WorkStatus                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdBy   User?                      @relation("WorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  responsible WorkExecutionResponsible[]
+
+  @@index([wellId, performedAt])
+  @@index([contractId, performedAt])
+  @@index([addendumId, performedAt])
+  @@index([workTypeId, performedAt])
+  @@index([statusId, performedAt])
+}
+
+model WorkExecutionResponsible {
+  id         Int           @id @default(autoincrement())
+  workId     Int
+  employeeId Int
+  work       WorkExecution @relation(fields: [workId], references: [id], onDelete: Restrict)
+  employee   Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([workId, employeeId])
+  @@index([employeeId, workId])
 }
 
 /// Справочник удостоверений: название и срок действия
@@ -258,4 +653,5 @@ enum NotificationKind {
   EXPIRY
   MESSAGE
   DIGEST
+  ORGANIZATION
 }

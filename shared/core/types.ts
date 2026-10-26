@@ -9,7 +9,7 @@ export interface AppSettingsDto extends StatusThresholds { timezone: string }
 export interface CatalogItemDto { id: number; name: string; validityMonths: number; sortOrder: number; isArchived: boolean }
 export interface PositionDto { id: number; name: string; sortOrder: number; isArchived: boolean; usersCount: number }
 export interface UserCredentialDto { id: number; userId: number; credentialId: number; name: string; validityMonths: number; number: string | null; issueDate: string | null; expiryDate: string | null; comment: string | null; isMarkedForDeletion: boolean; photoMime: string | null; status: CredentialStatus; daysLeft: number | null; updatedAt: string; user?: { id: number; fullName: string; login: string } }
-export type NotificationKind = 'EXPIRY' | 'MESSAGE' | 'DIGEST';
+export type NotificationKind = 'EXPIRY' | 'MESSAGE' | 'DIGEST' | 'ORGANIZATION';
 export interface NotificationDto { id: number; kind: NotificationKind; level: CredentialStatus | null; title: string; body: string; link: string | null; readAt: string | null; createdAt: string }
 export interface MessageDto { id: number; subject: string; body: string; isBroadcast: boolean; createdAt: string; sender: { id: number; fullName: string }; recipientsCount: number; readCount: number; recipient: { id: number; fullName: string } | null }
 export interface ScheduleTemplateDto { id: number; userId: number; name: string; workDays: number; restDays: number; cycleStart: string; validFrom: string; validTo: string | null; isActive: boolean; version: number; user?: { id: number; fullName: string } }
