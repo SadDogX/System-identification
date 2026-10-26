@@ -12,4 +12,5 @@ import { auditModule } from './audit/index.ts';
 import { radarCardsModule } from './radarCards/index.ts';
 import { ifoModule } from './ifo/index.ts';
 import { workScheduleModule } from './workSchedule/index.ts';
-export const modules: AppModule[] = [authModule, usersModule, credentialsModule, catalogModule, positionsModule, notificationsModule, messagesModule, dashboardModule, overviewModule, auditModule, radarCardsModule, ifoModule, workScheduleModule];
+import { organizationModule } from './organization/index.ts';
+export const modules: AppModule[] = [authModule, usersModule, credentialsModule, catalogModule, positionsModule, notificationsModule, messagesModule, dashboardModule, overviewModule, auditModule, radarCardsModule, ifoModule, workScheduleModule, organizationModule];

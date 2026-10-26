@@ -25,6 +25,8 @@ import { WorkSchedulePage } from './modules/schedule/WorkSchedulePage.tsx';
 import { AnnualSchedulePage } from './modules/schedule/AnnualSchedulePage.tsx';
 import { ScheduleOverviewPage } from './modules/schedule/ScheduleOverviewPage.tsx';
 import { ShiftPartnersPage } from './modules/schedule/ShiftPartnersPage.tsx';
+import { OrganizationPage } from './modules/organization/OrganizationPage.tsx';
+import { WorkExecutionPage } from './modules/organization/WorkExecutionPage.tsx';
 
 interface Route {
   path: string;
@@ -48,7 +50,8 @@ const ROUTES: Route[] = [
   { path: '/admin/radar-cards', role: 'ADMIN', render: () => <RadarCardsPage /> },
   { path: '/admin/ifo', role: 'ADMIN', render: () => <IfoPage /> },
   { path: '/admin/equipment', role: 'ADMIN', render: () => <ModulePlaceholderPage title="Оборудование" description="Учёт и контроль оборудования организации" icon="grid" /> },
-  { path: '/admin/work-execution', role: 'ADMIN', render: () => <ModulePlaceholderPage title="Выполнение работ" description="Планирование и контроль выполнения работ" icon="doneAll" /> },
+  { path: '/admin/work-execution', role: 'ADMIN', render: () => <WorkExecutionPage /> },
+  { path: '/admin/organization', role: 'ADMIN', render: () => <OrganizationPage /> },
 
   { path: '/admin/users/:id', role: 'ADMIN', render: (p) => <UserDetailPage key={p.id} id={Number(p.id)} /> },
   { path: '/admin/credentials', role: 'ADMIN', render: () => <AdminCredentialsPage /> },
@@ -64,6 +67,8 @@ const ROUTES: Route[] = [
   { path: '/user/radar-cards', role: 'USER', render: () => <RadarCardsPage /> },
   { path: '/user/ifo', role: 'USER', render: () => <IfoPage /> },
   { path: '/user/dashboard', role: 'USER', render: () => <UserDashboardPage /> },
+  { path: '/user/organization', role: 'USER', render: () => <OrganizationPage /> },
+  { path: '/user/work-execution', role: 'USER', render: () => <WorkExecutionPage /> },
   { path: '/user/credentials', role: 'USER', render: () => <UserCredentialsPage /> },
   { path: '/user/notifications', role: 'USER', render: () => <NotificationsPage /> },
   { path: '/user/profile', role: 'USER', render: () => <ProfilePage /> },
