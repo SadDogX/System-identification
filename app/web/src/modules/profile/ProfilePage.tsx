@@ -31,7 +31,8 @@ export function ProfilePage() {
         <ReadOnly label="ФИО" value={user.fullName} />
         <ReadOnly label="Логин" value={user.login} />
         <ReadOnly label="Роль" value={ROLE_LABELS[user.role]} />
-        <ReadOnly label="Должность" value={user.position} />
+        <ReadOnly label="Фото" value={user.photoFile ? 'Загружено' : null} />
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { const file = e.target.files?.[0]; if (file) api.put('/me/profile-photo', file).then(() => window.location.reload()); }} />
         <div className="muted small">ФИО и должность меняет администратор.</div>
         <form
           noValidate
