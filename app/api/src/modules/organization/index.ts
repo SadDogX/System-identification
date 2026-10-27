@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, contractPermissionSchema, contractSchema, customerSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema } from './schemas.ts';
+import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, baseUpdateSchema, contractPermissionSchema, contractSchema, customerSchema, customerUpdateSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema, workTypeUpdateSchema } from './schemas.ts';
 import { adminOnly, signedIn, type AppModule } from '../../core/module.ts';
 import { asyncHandler as h } from '../../core/asyncHandler.ts';
 import { validate } from '../../core/validate.ts';
@@ -37,6 +37,11 @@ admin.use(...adminOnly);
 admin.get('/roles', h(controller.listRoles));
 admin.get('/employees', h(controller.listEmployees));
 admin.post('/bases', validate(baseSchema), h(controller.createBase));
+admin.patch('/bases/:baseId', validate(baseUpdateSchema), h(controller.updateBase));
+admin.get('/customers', h(controller.listAdminCustomers));
+admin.patch('/customers/:customerId', validate(customerUpdateSchema), h(controller.updateCustomer));
+admin.get('/work-types', h(controller.listAdminWorkTypes));
+admin.patch('/work-types/:workTypeId', validate(workTypeUpdateSchema), h(controller.updateWorkType));
 admin.put('/users/:userId/roles', validate(accountRolesSchema), h(controller.setAccountRoles));
 admin.post('/statuses', validate(statusCatalogSchema), h(controller.createStatus));
 admin.patch('/statuses/:category/:id', validate(statusCatalogUpdateSchema), h(controller.updateStatus));

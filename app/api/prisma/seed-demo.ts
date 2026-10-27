@@ -7,6 +7,7 @@
 import { addDays, addMonths, todayInTimezone } from '@app/shared';
 import { prisma } from '../src/core/db.ts';
 import * as users from '../src/modules/users/users.service.ts';
+import { assignEmployee, setAccountRoles } from '../src/modules/organization/organization.service.ts';
 import * as catalog from '../src/modules/catalog/catalog.service.ts';
 import * as credentials from '../src/modules/credentials/credentials.service.ts';
 import * as messages from '../src/modules/messages/messages.service.ts';
@@ -26,6 +27,10 @@ const EMPLOYEES: {
   daysLeft: (number | null)[];
   blocked?: boolean;
   mustChangePassword?: boolean;
+  orgRole?: 'MANAGER' | 'COORDINATOR' | 'SENIOR_MECHANIC' | 'MECHANIC' | 'SHOP_FOREMAN' | 'SHOP_EMPLOYEE' | 'EMPLOYEE';
+  track?: 'TRS' | 'R_AND_M';
+  baseCode?: 'NZV_BPO' | 'ASTR_BPO';
+  supervisorLogin?: string;
 }[] = [
   { fullName: 'Иванов Иван Иванович', login: 'ivanov', position: 'Электромонтёр', daysLeft: [400, 5, 700, 60, 200] },
   { fullName: 'Петров Пётр Сергеевич', login: 'petrov', position: 'Мастер участка', daysLeft: [-12, 150, null, 8, 30] },
@@ -36,6 +41,37 @@ const EMPLOYEES: {
   { fullName: 'Новиков Сергей Николаевич', login: 'novikov', position: 'Водитель погрузчика', daysLeft: [0, 95, 89, 11, 10] },
   { fullName: 'Морозова Ольга Игоревна', login: 'morozova', position: 'Лаборант', daysLeft: [null, null, null, null, null], mustChangePassword: true },
   { fullName: 'Фёдоров Артём Ильич', login: 'fedorov', position: 'Электрогазосварщик', daysLeft: [300, 40, 800, 70, 15], blocked: true },
+  { fullName: 'Андреев Максим Игоревич', login: 'demo_manager_nzv', position: 'Менеджер БПО', daysLeft: [null, null, null, null, null], orgRole: 'MANAGER', track: 'TRS', baseCode: 'NZV_BPO' },
+  { fullName: 'Беляев Роман Сергеевич', login: 'demo_manager_astr', position: 'Менеджер БПО', daysLeft: [null, null, null, null, null], orgRole: 'MANAGER', track: 'TRS', baseCode: 'ASTR_BPO' },
+  { fullName: 'Воробьёв Кирилл Андреевич', login: 'demo_coord_nzv_1', position: 'Координатор', daysLeft: [null, null, null, null, null], orgRole: 'COORDINATOR', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_manager_nzv' },
+  { fullName: 'Гаврилов Денис Павлович', login: 'demo_coord_nzv_2', position: 'Координатор', daysLeft: [null, null, null, null, null], orgRole: 'COORDINATOR', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_manager_nzv' },
+  { fullName: 'Данилов Артём Олегович', login: 'demo_coord_astr_1', position: 'Координатор', daysLeft: [null, null, null, null, null], orgRole: 'COORDINATOR', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_manager_astr' },
+  { fullName: 'Егоров Илья Максимович', login: 'demo_coord_astr_2', position: 'Координатор', daysLeft: [null, null, null, null, null], orgRole: 'COORDINATOR', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_manager_astr' },
+  { fullName: 'Жуков Павел Дмитриевич', login: 'demo_trs_nzv_1', position: 'Техник по бурению 1 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_1' },
+  { fullName: 'Зайцев Никита Алексеевич', login: 'demo_trs_nzv_2', position: 'Техник по бурению 2 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_1' },
+  { fullName: 'Ильин Михаил Романович', login: 'demo_trs_nzv_3', position: 'Инженер по бурению', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_2' },
+  { fullName: 'Козлов Егор Владимирович', login: 'demo_trs_nzv_4', position: 'Инженер по бурению 2 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_2' },
+  { fullName: 'Лебедев Арсений Евгеньевич', login: 'demo_trs_astr_1', position: 'Техник по бурению 1 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_1' },
+  { fullName: 'Макаров Тимофей Ильич', login: 'demo_trs_astr_2', position: 'Инженер по бурению', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_1' },
+  { fullName: 'Николаев Владислав Денисович', login: 'demo_trs_astr_3', position: 'Техник по бурению 3 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_2' },
+  { fullName: 'Орлов Матвей Константинович', login: 'demo_trs_astr_4', position: 'Инженер по бурению 1 категории', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_2' },
+  { fullName: 'Павлов Андрей Аркадьевич', login: 'demo_senior_mech', position: 'Старший механик', daysLeft: [null, null, null, null, null], orgRole: 'SENIOR_MECHANIC', track: 'R_AND_M' },
+  { fullName: 'Романов Сергей Викторович', login: 'demo_mechanic_nzv', position: 'Механик', daysLeft: [null, null, null, null, null], orgRole: 'MECHANIC', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_senior_mech' },
+  { fullName: 'Семёнов Алексей Борисович', login: 'demo_mechanic_astr', position: 'Механик', daysLeft: [null, null, null, null, null], orgRole: 'MECHANIC', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_senior_mech' },
+  { fullName: 'Тихонов Евгений Олегович', login: 'demo_foreman_nzv_1', position: 'Мастер цеха', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_FOREMAN', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_mechanic_nzv' },
+  { fullName: 'Ушаков Дмитрий Алексеевич', login: 'demo_foreman_nzv_2', position: 'Мастер цеха', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_FOREMAN', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_mechanic_nzv' },
+  { fullName: 'Фомин Артём Валерьевич', login: 'demo_foreman_astr_1', position: 'Мастер цеха', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_FOREMAN', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_mechanic_astr' },
+  { fullName: 'Харитонов Игорь Петрович', login: 'demo_foreman_astr_2', position: 'Мастер цеха', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_FOREMAN', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_mechanic_astr' },
+  { fullName: 'Цветков Иван Сергеевич', login: 'demo_shop_nzv_1', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_1' },
+  { fullName: 'Чернов Максим Андреевич', login: 'demo_shop_nzv_2', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_1' },
+  { fullName: 'Шестаков Павел Ильич', login: 'demo_shop_nzv_3', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_2' },
+  { fullName: 'Щербаков Никита Романович', login: 'demo_shop_nzv_4', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_2' },
+  { fullName: 'Юдин Михаил Евгеньевич', login: 'demo_shop_astr_1', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_1' },
+  { fullName: 'Яковлев Кирилл Владимирович', login: 'demo_shop_astr_2', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_1' },
+  { fullName: 'Абрамов Роман Денисович', login: 'demo_shop_astr_3', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_2' },
+  { fullName: 'Борисов Арсений Павлович', login: 'demo_shop_astr_4', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_2' },
+  { fullName: 'Власов Тимур Олегович', login: 'demo_shop_nzv_5', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_1' },
+  { fullName: 'Голубев Аркадий Максимович', login: 'demo_shop_astr_5', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_1' },
 ];
 
 const NUMBER_PREFIX = ['ОТ', 'ЭБ', 'ПБ', 'МЗ', 'ВР'];
@@ -88,6 +124,31 @@ async function main() {
       await prisma.user.update({ where: { id: u.id }, data: { mustChangePassword: false } });
     }
     created.push({ id: u.id, spec });
+  }
+
+  // Полная синтетическая оргструктура: TRS и R&M для обеих демо-баз.
+  const createdByLogin = new Map(created.map(({ id, spec }) => [spec.login, id]));
+  const baseByCode = new Map(
+    (await prisma.base.findMany({ where: { code: { in: ['NZV_BPO', 'ASTR_BPO'] } } })).map((base) => [base.code!, base.id]),
+  );
+  for (const { id, spec } of created) {
+    if (!spec.orgRole || !spec.track) continue;
+    await setAccountRoles(actor, id, { roles: [spec.orgRole] });
+    const employee = await prisma.employee.findUniqueOrThrow({ where: { userId: id } });
+    const supervisorUserId = spec.supervisorLogin ? createdByLogin.get(spec.supervisorLogin) : undefined;
+    const supervisor = supervisorUserId
+      ? await prisma.employee.findUniqueOrThrow({ where: { userId: supervisorUserId } })
+      : undefined;
+    const baseId = spec.baseCode ? baseByCode.get(spec.baseCode) : undefined;
+    if (spec.baseCode && !baseId) throw new Error(`Не найдена база ${spec.baseCode}; сначала выполните npm run db:seed`);
+    await assignEmployee(actor, employee.id, {
+      track: spec.track,
+      ...(baseId ? { baseId } : {}),
+      ...(supervisor ? { supervisorEmployeeId: supervisor.id } : {}),
+      positionId: await positionId(spec.position),
+      startsAt: today,
+      reason: 'Синтетическое демо-назначение',
+    });
   }
 
   // Новая позиция справочника появляется у всех уже созданных сотрудников

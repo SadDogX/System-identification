@@ -20,7 +20,7 @@ export async function clearOwn(req: Request, res: Response) {
 // ---------- Администратор ----------
 
 export async function list(req: Request, res: Response) {
-  res.json(await credentials.adminList(validQuery(req)));
+  res.json(await credentials.adminList(currentUser(req), validQuery(req)));
 }
 
 export async function update(req: Request, res: Response) {

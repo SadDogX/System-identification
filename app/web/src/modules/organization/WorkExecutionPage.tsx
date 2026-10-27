@@ -6,7 +6,7 @@ import { Alert, PageHeader, SelectField, TextField } from '@app/shared/ui';
 
 interface Base { id: number; name: string; code: string | null }
 interface Mine { id: number; name: string; baseId: number; base: Base }
-interface Well { id: number; name: string; code: string | null }
+interface Well { id: number; name: string; code: string | null; contractBases?: { contract: { number: string } | null; addendum: { number: string } | null }[] }
 interface Customer { id: number; name: string; code: string | null }
 interface WorkType { id: number; name: string; code: string; requiresContractPermission: boolean }
 interface Status { id: number; code: string; name: string; allowsWork?: boolean }
@@ -54,6 +54,7 @@ export function WorkExecutionPage() {
   const [contractNumber, setContractNumber] = useState('');
   const [wellBasisStart, setWellBasisStart] = useState(today());
   const [wellBasisEnd, setWellBasisEnd] = useState('');
+  const [basisWellIds, setBasisWellIds] = useState<number[]>([]);
   const [description, setDescription] = useState('');
   const [message, setMessage] = useState('');
 
@@ -132,7 +133,7 @@ export function WorkExecutionPage() {
     startsAt: wellBasisStart,
     endsAt: wellBasisEnd || null,
   }), {
-    onSuccess: () => setMessage('Договорное основание закреплено за скважиной.'),
+    onSuccess: () => { setMessage('Договорное основание закреплено за скважиной.'); invalidate(`org:work:wells:${mineId}`); },
   });
   const recordWork = useAction(() => api.post('/org/work', {
     wellId: Number(wellId),
@@ -188,6 +189,11 @@ export function WorkExecutionPage() {
       {Boolean(createWorkType.error) && <Alert>{errorMessage(createWorkType.error)}</Alert>}
     </section>}
 
+    {canManageWork && isAdmin && <section className="panel pad" style={{ marginBottom: 16 }}>
+      <h2 className="section-title">Как начать работу с месторождениями</h2>
+      <p className="muted">Создайте базу в разделе «Справочники → Базы», затем откройте «Работы и объекты → Месторождения и скважины». Там добавьте месторождение, скважины и назначьте координатора.</p>
+    </section>}
+
     {canManageWork && <><section className="panel" style={{ padding: 18, marginBottom: 16 }}>
       <h2 className="section-title">Основной договор</h2>
       <form className="row wrap" style={{ alignItems: 'flex-end' }} onSubmit={(event) => {
@@ -238,7 +244,8 @@ export function WorkExecutionPage() {
     </section>
 
     <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
-      <h2 className="section-title">Скважины и договорное основание</h2>
+      <h2 className="section-title">Скважины и привязка договора</h2>
+      <p className="muted">Чтобы один договор покрывал несколько скважин, выберите нужные скважины ниже и примените договорное основание ко всем за один раз.</p>
       <div className="row wrap" style={{ alignItems: 'flex-end' }}>
         <SelectField label="Месторождение" value={mineId} onChange={(event) => {
           setMineId(event.target.value);
@@ -253,10 +260,33 @@ export function WorkExecutionPage() {
         </SelectField>
         <TextField label="Основание с" type="date" value={wellBasisStart} onChange={(event) => setWellBasisStart(event.target.value)} />
         <TextField label="Основание по (пусто — без даты окончания)" type="date" value={wellBasisEnd} onChange={(event) => setWellBasisEnd(event.target.value)} />
-        <button type="button" className="btn" disabled={!wellId || !contractId || assignBasis.pending} onClick={() => assignBasis.run()}>
-          Закрепить основание
+        <button type="button" className="btn btn-primary" disabled={!wellId || !(addendumId || contractId) || assignBasis.pending} onClick={() => assignBasis.run()}>
+          Привязать к выбранной скважине
         </button>
       </div>
+      {wellId && <p className="muted small">Перед применением выберите выше договор или допсоглашение. Текущий выбор: {addendumId ? `допсоглашение ${availableAddenda.find((item) => String(item.id) === addendumId)?.number ?? ''}` : selectedContract ? `договор ${selectedContract.number}` : 'не выбран'}.</p>}
+      {wells.length > 0 && <div className="stack tight" style={{ marginTop: 16 }}>
+        <strong>Массовая привязка к скважинам месторождения</strong>
+        {wells.map((well) => <label className="check-row" key={well.id}>
+          <input type="checkbox" checked={basisWellIds.includes(well.id)} onChange={(event) => setBasisWellIds((current) => event.target.checked ? [...current, well.id] : current.filter((id) => id !== well.id))} />
+          <span>{well.name}{well.code ? ` · ${well.code}` : ''}</span>
+        </label>)}
+        <button type="button" className="btn" disabled={!basisWellIds.length || !(addendumId || contractId) || assignBasis.pending} onClick={async () => {
+          setMessage('');
+          for (const id of basisWellIds) {
+            const ok = await api.post(`/org/wells/${id}/contract-bases`, {
+              ...(addendumId ? { addendumId: Number(addendumId) } : { contractId: Number(contractId) }),
+              startsAt: wellBasisStart,
+              endsAt: wellBasisEnd || null,
+            }).then(() => true).catch((error) => { setMessage(`Привязка остановлена на скважине ${id}: ${errorMessage(error)}. Ранее выполненные привязки сохранены.`); return false; });
+            if (!ok) { invalidate(`org:work:wells:${mineId}`); return; }
+          }
+          setMessage(`Договорное основание закреплено за ${basisWellIds.length} скважинами.`);
+          setBasisWellIds([]);
+          invalidate(`org:work:wells:${mineId}`);
+        }}>Применить к {basisWellIds.length || 'выбранным'} скважинам</button>
+      </div>}
+      {wells.length > 0 && <div className="table-wrap" style={{ marginTop: 16 }}><table className="table"><thead><tr><th>Скважина</th><th>Действующее договорное основание</th></tr></thead><tbody>{wells.map((well) => <tr key={well.id}><td>{well.name}</td><td>{well.contractBases?.map((basis) => basis.contract?.number ?? basis.addendum?.number).join(', ') || 'Не привязано'}</td></tr>)}</tbody></table></div>}
       {Boolean(assignBasis.error) && <Alert>{errorMessage(assignBasis.error)}</Alert>}
     </section>
 

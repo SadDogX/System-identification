@@ -46,10 +46,10 @@ export function UsersPage() {
   return (
     <>
       <PageHeader
-        title="Пользователи"
+        title="Справочник сотрудников"
         actions={
           <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-            <Icon name="add" small /> Создать пользователя
+            <Icon name="add" small /> Добавить сотрудника
           </button>
         }
       />

@@ -1,5 +1,5 @@
 import type { RequestHandler, Router } from 'express';
-import { authenticate, requirePasswordChanged, requireRole } from './auth.ts';
+import { authenticate, requirePasswordChanged, requireSystemRole } from './auth.ts';
 
 /**
  * Функциональный модуль системы: свои маршруты API и (необязательно) фоновые задачи.
@@ -13,7 +13,7 @@ export interface AppModule {
 }
 
 /** Только для вошедших администраторов, сменивших временный пароль. */
-export const adminOnly: RequestHandler[] = [authenticate, requirePasswordChanged, requireRole('ADMIN')];
+export const adminOnly: RequestHandler[] = [authenticate, requirePasswordChanged, requireSystemRole('ADMIN')];
 
 /** Любой вошедший пользователь, сменивший временный пароль. */
 export const signedIn: RequestHandler[] = [authenticate, requirePasswordChanged];

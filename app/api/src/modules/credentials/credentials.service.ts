@@ -15,6 +15,7 @@ import { getDateContext } from '../../core/settings.ts';
 import { checkExpiryNotifications } from '../notifications/notifications.service.ts';
 import { statusWhere, visibleCredentialWhere } from './filters.ts';
 import { deletePhotoFile } from './photos.service.ts';
+import { assertManageableUser, manageableUserFilter } from '../../core/organizationAccess.ts';
 
 const AUDIT_FIELDS = ['number', 'issueDate', 'expiryDate', 'comment', 'isMarkedForDeletion'] as const;
 
@@ -142,10 +143,12 @@ interface AdminListQuery {
   pageSize: number;
 }
 
-export async function adminList(query: AdminListQuery): Promise<Paginated<UserCredentialDto>> {
+export async function adminList(actor: User, query: AdminListQuery): Promise<Paginated<UserCredentialDto>> {
   const { settings, today } = await getDateContext();
+  const scope = await manageableUserFilter(actor);
   const where: Prisma.UserCredentialWhereInput = {
     ...visibleCredentialWhere,
+    user: scope,
     isMarkedForDeletion: query.marked ?? false,
     ...(query.credentialId && { credentialId: query.credentialId }),
     ...(query.userId && { userId: query.userId }),
@@ -193,12 +196,13 @@ export async function adminListForUser(userId: number): Promise<UserCredentialDt
   return rows.map((r) => toUserCredentialDto(r, today, settings));
 }
 
-async function findForAdmin(id: number) {
+async function findForAdmin(actor: User, id: number) {
   const row = await prisma.userCredential.findFirst({
     where: { id, user: { isDeleted: false } },
     include: withRelations,
   });
   if (!row) throw notFound('Удостоверение не найдено');
+  await assertManageableUser(actor, row.userId);
   return row;
 }
 
@@ -208,7 +212,7 @@ async function applyAdminChange(
   action: string,
   data: Prisma.UserCredentialUncheckedUpdateInput & Record<string, unknown>,
 ): Promise<UserCredentialDto> {
-  const existing = await findForAdmin(id);
+  const existing = await findForAdmin(actor, id);
   const { settings, today } = await getDateContext();
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.userCredential.update({
@@ -231,7 +235,7 @@ async function applyAdminChange(
 }
 
 export async function adminUpdate(actor: User, id: number, input: AdminCredentialUpdateRequest) {
-  const existing = await findForAdmin(id);
+  const existing = await findForAdmin(actor, id);
   const data: Record<string, unknown> = {};
   if (input.number !== undefined) data.number = input.number;
   if (input.comment !== undefined) data.comment = input.comment;
@@ -246,7 +250,7 @@ export async function adminUpdate(actor: User, id: number, input: AdminCredentia
 
 /** Очистка данных: запись и позиция справочника остаются, у сотрудника снова «не заполнено». */
 export async function adminClear(actor: User, id: number) {
-  const before = await findForAdmin(id);
+  const before = await findForAdmin(actor, id);
   const result = await applyAdminChange(actor, id, 'credential.clear', {
     number: null,
     issueDate: null,

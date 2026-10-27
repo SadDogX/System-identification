@@ -44,8 +44,20 @@ export async function createBase(req: Request, res: Response) {
   res.status(201).json(await service.createBase(currentUser(req), req.body));
 }
 
+export async function updateBase(req: Request, res: Response) {
+  res.json(await service.updateBase(currentUser(req), idParam(req, 'baseId'), req.body));
+}
+
 export async function createCustomer(req: Request, res: Response) {
   res.status(201).json(await service.createCustomer(currentUser(req), req.body));
+}
+
+export async function listAdminCustomers(_req: Request, res: Response) {
+  res.json(await service.listAdminCustomers());
+}
+
+export async function updateCustomer(req: Request, res: Response) {
+  res.json(await service.updateCustomer(currentUser(req), idParam(req, 'customerId'), req.body));
 }
 
 export async function createContract(req: Request, res: Response) {
@@ -58,6 +70,14 @@ export async function createAddendum(req: Request, res: Response) {
 
 export async function createWorkType(req: Request, res: Response) {
   res.status(201).json(await service.createWorkType(currentUser(req), req.body));
+}
+
+export async function listAdminWorkTypes(_req: Request, res: Response) {
+  res.json(await service.listAdminWorkTypes());
+}
+
+export async function updateWorkType(req: Request, res: Response) {
+  res.json(await service.updateWorkType(currentUser(req), idParam(req, 'workTypeId'), req.body));
 }
 
 export async function setContractPermission(req: Request, res: Response) {

@@ -86,9 +86,12 @@ export type UpdateProfileRequest = Infer<typeof updateProfileSchema>;
 
 export const VIEW_MODES = ['table', 'cards'] as const;
 export type ViewMode = (typeof VIEW_MODES)[number];
+export const UI_THEMES = ['slate', 'navy', 'graphite', 'forest', 'burgundy', 'light'] as const;
+export type UiTheme = (typeof UI_THEMES)[number];
 
 export const uiSettingsSchema = object({
   credentialsView: optional(oneOf(VIEW_MODES)),
+  theme: optional(oneOf(UI_THEMES)),
 });
 export type UiSettings = Infer<typeof uiSettingsSchema>;
 

@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -130,6 +129,7 @@ model UserSystemRole {
   userId             Int
   systemRoleId       Int
   currentUserRoleKey String?    @unique @db.VarChar(100)
+  globalRoleKey      String?    @unique @db.VarChar(50)
   assignedAt         DateTime   @default(now())
   revokedAt          DateTime?
   assignedById       Int?

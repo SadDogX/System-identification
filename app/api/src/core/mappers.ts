@@ -18,6 +18,7 @@ export function toUserDto(user: UserWithPosition): UserDto {
     fullName: user.fullName,
     login: user.login,
     role: user.role,
+    systemRoles: user.systemRoles.map((grant) => grant.systemRole.code),
     positionId: user.positionId,
     position: user.position?.name ?? null,
     phone: user.phone,

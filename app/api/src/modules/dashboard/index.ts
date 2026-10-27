@@ -1,12 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { currentUser } from '../../core/auth.ts';
 import { asyncHandler as h } from '../../core/asyncHandler.ts';
-import { adminOnly, type AppModule } from '../../core/module.ts';
+import { signedIn, type AppModule } from '../../core/module.ts';
 import { getDashboard } from './dashboard.service.ts';
 
 /** Дашборд администратора: счётчики по статусам, ближайшие истечения, последние изменения. */
 const router = Router();
-router.use(...adminOnly);
+router.use(...signedIn);
 router.get(
   '/',
   h(async (req: Request, res: Response) => {

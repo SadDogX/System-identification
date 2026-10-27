@@ -88,13 +88,13 @@ export function useCurrentUser(): UserDto {
 export const homePath = (user: UserDto) => (user.role === 'ADMIN' ? '/admin/dashboard' : '/user/dashboard');
 
 /** Только UX: реальная проверка прав выполняется на сервере. */
-export function Protected({ role, children }: { role?: Role; children: ReactNode }) {
+export function Protected({ role, systemRoles = [], children }: { role?: Role; systemRoles?: string[]; children: ReactNode }) {
   const { user, initializing } = useAuth();
   const { path } = useRouter();
 
   if (initializing) return <Spinner />;
   if (!user) return <Redirect to="/login" />;
   if (user.mustChangePassword && path !== '/change-password') return <Redirect to="/change-password" />;
-  if (role && user.role !== role) return <Redirect to={homePath(user)} />;
+  if (role && user.role !== role && !systemRoles.some((required) => user.systemRoles.includes(required))) return <Redirect to={homePath(user)} />;
   return <>{children}</>;
 }

@@ -29,6 +29,10 @@ export async function startServer() {
 export const url = (path: string) => baseUrl + path;
 
 export async function stopServer() {
+  if (!server) {
+    await prisma.$disconnect();
+    return;
+  }
   await new Promise((resolve) => server.close(resolve));
   await prisma.$disconnect();
 }

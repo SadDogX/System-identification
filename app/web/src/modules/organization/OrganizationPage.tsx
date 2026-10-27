@@ -28,8 +28,9 @@ interface Employee {
     base: Base | null;
     supervisor: { user: { fullName: string } } | null;
   }[];
+  mineAssignments?: { mine: { id: number; name: string } }[];
 }
-interface Mine { id: number; name: string; code: string | null; baseId: number; base: Base }
+interface Mine { id: number; name: string; code: string | null; baseId: number; base: Base; coordinatorAssignments?: { coordinator: { user: { fullName: string } } }[] }
 
 const today = () => {
   const date = new Date();
@@ -182,7 +183,7 @@ export function OrganizationPage() {
         )}
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Сотрудник</th><th>Системная роль</th><th>Должность</th><th>База / руководитель</th><th>Подразделение</th></tr></thead>
+            <thead><tr><th>Сотрудник</th><th>Системная роль</th><th>Должность</th><th>База / руководитель</th><th>Подразделение</th><th>Месторождения координатора</th></tr></thead>
             <tbody>
               {employees.map((employee) => {
                 const assignment = employee.assignments[0];
@@ -193,6 +194,7 @@ export function OrganizationPage() {
                     <td>{assignment?.position?.name ?? 'Не назначена'}</td>
                     <td>{assignment?.base?.name ?? 'Не назначена'}{assignment?.supervisor?.user.fullName && <div className="muted small">Руководитель: {assignment.supervisor.user.fullName}</div>}</td>
                     <td>{assignment?.track === 'UNASSIGNED' ? 'Не назначено' : assignment?.track === 'R_AND_M' ? 'R&M' : 'TRS'}</td>
+                    <td>{employee.mineAssignments?.map((item) => item.mine.name).join(', ') || '—'}</td>
                   </tr>
                 );
               })}
@@ -261,6 +263,7 @@ export function OrganizationPage() {
 
       <section className="panel" style={{ padding: 18 }}>
         <h2 className="section-title">Месторождения</h2>
+        {isAdmin && <p className="muted">Сначала добавьте базу в «Справочники → Базы». Затем выберите её здесь и создайте для неё месторождение; скважины добавляются ниже в карточке месторождения.</p>}
         {Array.from(mineByBase.entries()).map(([baseId, baseMines]) => {
           const base = bases.find((item) => item.id === baseId);
           return <div key={baseId} style={{ marginBottom: 20 }}>
@@ -282,6 +285,7 @@ export function OrganizationPage() {
                 });
               }}
               pending={assignMineCoordinator.pending}
+              currentCoordinator={mine.coordinatorAssignments?.[0]?.coordinator.user.fullName ?? null}
             />)}
           </div>;
         })}
@@ -330,6 +334,7 @@ function MineRow({
   onDateChange,
   onAssign,
   pending,
+  currentCoordinator,
 }: {
   mine: Mine;
   canManage: boolean;
@@ -340,10 +345,12 @@ function MineRow({
   onDateChange: (value: string) => void;
   onAssign: () => void;
   pending: boolean;
+  currentCoordinator: string | null;
 }) {
   const wellsQuery = useQuery(`org:wells:${mine.id}`, () => api.get<{ id: number; name: string; code: string | null }[]>(`/org/mines/${mine.id}/wells`));
   return <div className="row wrap" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
     <strong>{mine.name}</strong><span className="muted">{mine.code ?? ''}</span>
+    <span>Координатор: {currentCoordinator ?? 'не назначен'}</span>
     <span>{wellsQuery.data?.length ?? 0} скважин</span>
     {wellsQuery.error && <span className="danger">{wellsQuery.error}</span>}
     {canManage && <SelectField label="Координатор проекта" value={selectedCoordinatorId} onChange={(event) => onCoordinatorChange(event.target.value)}>

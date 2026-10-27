@@ -10,9 +10,11 @@ import type {
   AddendumInput,
   AssignmentInput,
   BaseInput,
+  BaseUpdateInput,
   ContractInput,
   ContractPermissionInput,
   CustomerInput,
+  CustomerUpdateInput,
   MineCoordinatorInput,
   MineInput,
   StatusCatalogInput,
@@ -22,6 +24,7 @@ import type {
   WorkAuthorizationInput,
   WorkExecutionInput,
   WorkTypeInput,
+  WorkTypeUpdateInput,
 } from './schemas.ts';
 
 const ORG_ROLES = [
@@ -178,7 +181,7 @@ export async function syncLegacySystemRole(tx: Tx, user: User, actorId: number) 
   for (const grant of activeGrants) {
     await tx.userSystemRole.update({
       where: { id: grant.id },
-      data: { currentUserRoleKey: null, revokedAt: now },
+      data: { currentUserRoleKey: null, globalRoleKey: null, revokedAt: now },
     });
   }
   await tx.userSystemRole.create({
@@ -322,6 +325,10 @@ export async function listEmployees(actor: User) {
         where: { activeEmployeeId: { not: null } },
         include: { position: true, base: true, status: true, supervisor: { include: { user: { select: { fullName: true } } } } },
       },
+      mineAssignments: {
+        where: { currentMineId: { not: null } },
+        include: { mine: { select: { id: true, name: true } } },
+      },
     },
     orderBy: { user: { fullName: 'asc' } },
   });
@@ -332,7 +339,7 @@ export async function listMines(actor: User, baseId?: number) {
   if (isAdministrator(actor, roles)) {
     return prisma.mine.findMany({
       where: { ...(baseId && { baseId }) },
-      include: { base: true },
+      include: { base: true, coordinatorAssignments: { where: { currentMineId: { not: null } }, include: { coordinator: { include: { user: { select: { fullName: true } } } } } } },
       orderBy: [{ baseId: 'asc' }, { name: 'asc' }],
     });
   }
@@ -340,7 +347,7 @@ export async function listMines(actor: User, baseId?: number) {
   if (roles.includes('MANAGER')) {
     const scope = await actorBase(prisma, actor);
     if (!scope || (baseId !== undefined && baseId !== scope)) throw forbidden();
-    return prisma.mine.findMany({ where: { baseId: scope }, include: { base: true }, orderBy: { name: 'asc' } });
+    return prisma.mine.findMany({ where: { baseId: scope }, include: { base: true, coordinatorAssignments: { where: { currentMineId: { not: null } }, include: { coordinator: { include: { user: { select: { fullName: true } } } } } } }, orderBy: { name: 'asc' } });
   }
   if (roles.includes('COORDINATOR') && employee) {
     return prisma.mine.findMany({
@@ -348,7 +355,7 @@ export async function listMines(actor: User, baseId?: number) {
         coordinatorAssignments: { some: { coordinatorId: employee.id, currentMineId: { not: null } } },
         ...(baseId && { baseId }),
       },
-      include: { base: true },
+      include: { base: true, coordinatorAssignments: { where: { currentMineId: { not: null } }, include: { coordinator: { include: { user: { select: { fullName: true } } } } } } },
       orderBy: { name: 'asc' },
     });
   }
@@ -371,7 +378,11 @@ export async function listWells(actor: User, mineId: number) {
       }));
     if (!manager && !coordinator) throw forbidden();
   }
-  return prisma.well.findMany({ where: { mineId }, orderBy: { name: 'asc' } });
+  return prisma.well.findMany({
+    where: { mineId },
+    include: { contractBases: { where: { currentWellId: { not: null } }, include: { contract: true, addendum: true } } },
+    orderBy: { name: 'asc' },
+  });
 }
 
 export async function listContracts(actor: User, baseId: number) {
@@ -389,10 +400,42 @@ export async function listCustomers(actor: User) {
   return prisma.customer.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
 }
 
+export async function listAdminCustomers() {
+  return prisma.customer.findMany({ orderBy: [{ isActive: 'desc' }, { name: 'asc' }] });
+}
+
+export async function updateCustomer(actor: User, customerId: number, input: CustomerUpdateInput) {
+  const roles = await roleCodes(prisma, actor.id);
+  if (!isAdministrator(actor, roles)) throw forbidden();
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.customer.findUnique({ where: { id: customerId } });
+    if (!existing) throw notFound('Заказчик не найден');
+    const updated = await tx.customer.update({ where: { id: customerId }, data: input });
+    await audit(tx, { actorId: actor.id, action: 'organization.customer.update', entityType: 'Customer', entityId: customerId, diff: diffOf(existing, updated, ['name', 'code', 'isActive']) });
+    return updated;
+  });
+}
+
 export async function listWorkTypes(actor: User) {
   const roles = await roleCodes(prisma, actor.id);
   if (!isAdministrator(actor, roles) && !roles.includes('MANAGER')) throw forbidden();
   return prisma.workType.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+}
+
+export async function listAdminWorkTypes() {
+  return prisma.workType.findMany({ orderBy: [{ isActive: 'desc' }, { name: 'asc' }] });
+}
+
+export async function updateWorkType(actor: User, workTypeId: number, input: WorkTypeUpdateInput) {
+  const roles = await roleCodes(prisma, actor.id);
+  if (!isAdministrator(actor, roles)) throw forbidden();
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.workType.findUnique({ where: { id: workTypeId } });
+    if (!existing) throw notFound('Вид работ не найден');
+    const updated = await tx.workType.update({ where: { id: workTypeId }, data: input });
+    await audit(tx, { actorId: actor.id, action: 'organization.workType.update', entityType: 'WorkType', entityId: workTypeId, diff: diffOf(existing, updated, ['name', 'requiresContractPermission', 'isActive']) });
+    return updated;
+  });
 }
 
 export async function createBase(actor: User, input: BaseInput) {
@@ -404,6 +447,32 @@ export async function createBase(actor: User, input: BaseInput) {
     });
     await audit(tx, { actorId: actor.id, action: 'base.create', entityType: 'Base', entityId: base.id });
     return base;
+  });
+}
+
+export async function updateBase(actor: User, baseId: number, input: BaseUpdateInput) {
+  const roles = await roleCodes(prisma, actor.id);
+  if (!isAdministrator(actor, roles)) throw forbidden();
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.base.findUnique({ where: { id: baseId } });
+    if (!existing) throw notFound('База не найдена');
+    if (input.isActive === false && existing.isActive) {
+      const [assignments, mines, contracts] = await Promise.all([
+        tx.employeeAssignment.count({ where: { baseId, activeEmployeeId: { not: null } } }),
+        tx.mine.count({ where: { baseId, isActive: true } }),
+        tx.contract.count({ where: { baseId, status: { isActive: true, allowsWork: true } } }),
+      ]);
+      if (assignments || mines || contracts) throw conflict('Нельзя архивировать базу с действующими назначениями, месторождениями или договорами');
+    }
+    const updated = await tx.base.update({ where: { id: baseId }, data: input });
+    await audit(tx, {
+      actorId: actor.id,
+      action: 'base.update',
+      entityType: 'Base',
+      entityId: baseId,
+      diff: diffOf(existing, updated, ['name', 'code', 'isActive']),
+    });
+    return updated;
   });
 }
 
@@ -438,7 +507,8 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
   if (roles.filter((role) => EXCLUSIVE_ORG_ROLES.includes(role as (typeof EXCLUSIVE_ORG_ROLES)[number])).length > 1) {
     throw badRequest('Одному сотруднику можно назначить только одну управленческую роль оргструктуры');
   }
-  return prisma.$transaction(async (tx) => {
+  try {
+    return await prisma.$transaction(async (tx) => {
     const target = await tx.user.findFirst({ where: { id: userId, isDeleted: false } });
     if (!target) throw notFound('Пользователь не найден');
     if (roles.includes('ADMIN') && target.role !== 'ADMIN') {
@@ -446,6 +516,10 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
     }
     const roleRows = await tx.systemRole.findMany({ where: { code: { in: roles }, isActive: true } });
     if (roleRows.length !== roles.length) throw badRequest('Одна или несколько системных ролей неактивны');
+    if (roles.includes('SENIOR_MECHANIC') && await tx.userSystemRole.findUnique({ where: { globalRoleKey: 'SENIOR_MECHANIC' } })) {
+      const existing = await tx.userSystemRole.findUnique({ where: { currentUserRoleKey: `${userId}:${roleRows.find((role) => role.code === 'SENIOR_MECHANIC')!.id}` } });
+      if (!existing) throw conflict('В компании уже назначен старший механик');
+    }
     const current = await tx.userSystemRole.findMany({
       where: { userId, revokedAt: null },
       include: { systemRole: { select: { code: true } } },
@@ -464,7 +538,7 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
     for (const grant of removed) {
       await tx.userSystemRole.update({
         where: { id: grant.id },
-        data: { currentUserRoleKey: null, revokedAt: now },
+        data: { currentUserRoleKey: null, globalRoleKey: null, revokedAt: now },
       });
     }
     for (const role of added) {
@@ -473,10 +547,12 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
           userId,
           systemRoleId: role.id,
           currentUserRoleKey: `${userId}:${role.id}`,
+          globalRoleKey: role.code === 'SENIOR_MECHANIC' ? 'SENIOR_MECHANIC' : null,
           assignedById: actor.id,
         },
       });
     }
+    await tx.user.update({ where: { id: userId }, data: { tokenVersion: { increment: 1 } } });
     const employee = await tx.employee.findUnique({ where: { userId } });
     if (employee) {
       await tx.organizationChange.create({
@@ -499,7 +575,13 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
       diff: { roles: { from: currentCodes, to: roles } },
     });
     return { userId, roles: [...roles].sort() };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
+      throw conflict('Системная роль уже назначена или меняется параллельно');
+    }
+    throw error;
+  }
 }
 
 type StatusCategory = StatusCatalogInput['category'];
@@ -1089,7 +1171,7 @@ export async function authorizeWork(actor: User, input: WorkAuthorizationInput) 
 
 export async function createCustomer(actor: User, input: CustomerInput) {
   const roles = await roleCodes(prisma, actor.id);
-  if (!isAdministrator(actor, roles)) throw forbidden();
+  if (!isAdministrator(actor, roles) && !roles.includes('MANAGER')) throw forbidden();
   return prisma.$transaction(async (tx) => {
     const customer = await tx.customer.create({ data: { name: input.name, code: input.code ?? null } });
     await audit(tx, {

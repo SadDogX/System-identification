@@ -7,6 +7,8 @@ import { config } from '../../core/config.ts';
 import { prisma } from '../../core/db.ts';
 import { badRequest, notFound } from '../../core/errors.ts';
 import { audit } from '../../core/audit.ts';
+import { isAdministrator } from '../../core/auth.ts';
+import { manageableUserIds } from '../../core/organizationAccess.ts';
 
 type PhotoType = (typeof PHOTO_TYPES)[number];
 
@@ -37,11 +39,13 @@ export async function deletePhotoFile(file: string | null | undefined) {
  * администратор — с записями любого неудалённого сотрудника.
  */
 async function findAccessible(actor: User, id: number) {
+  const administrator = await isAdministrator(actor);
+  const userIds = administrator ? [] : await manageableUserIds(actor);
   const row = await prisma.userCredential.findFirst({
     where:
-      actor.role === 'ADMIN'
+      administrator
         ? { id, user: { isDeleted: false } }
-        : { id, userId: actor.id, isMarkedForDeletion: false, credential: { isArchived: false } },
+        : { id, userId: { in: userIds }, isMarkedForDeletion: false, credential: { isArchived: false } },
   });
   if (!row) throw notFound('Удостоверение не найдено');
   return row;

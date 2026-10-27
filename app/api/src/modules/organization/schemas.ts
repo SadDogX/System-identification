@@ -23,6 +23,13 @@ export const baseSchema = object({
 });
 export type BaseInput = Infer<typeof baseSchema>;
 
+export const baseUpdateSchema = object({
+  name: text({ max: 150 }),
+  code: optionalText(50),
+  isActive: optional(bool()),
+});
+export type BaseUpdateInput = Infer<typeof baseUpdateSchema>;
+
 export const mineSchema = object({
   name: text({ max: 150 }),
   code: optionalText(50),
@@ -116,6 +123,13 @@ export const customerSchema = object({
 });
 export type CustomerInput = Infer<typeof customerSchema>;
 
+export const customerUpdateSchema = object({
+  name: text({ max: 200 }),
+  code: optionalText(50),
+  isActive: optional(bool()),
+});
+export type CustomerUpdateInput = Infer<typeof customerUpdateSchema>;
+
 export const contractSchema = object(
   {
     customerId: int({ min: 1 }),
@@ -152,6 +166,13 @@ export const workTypeSchema = object({
   requiresContractPermission: bool(),
 });
 export type WorkTypeInput = Infer<typeof workTypeSchema>;
+
+export const workTypeUpdateSchema = object({
+  name: text({ max: 150 }),
+  requiresContractPermission: bool(),
+  isActive: bool(),
+});
+export type WorkTypeUpdateInput = Infer<typeof workTypeUpdateSchema>;
 
 export const wellContractBasisSchema = object(
   {

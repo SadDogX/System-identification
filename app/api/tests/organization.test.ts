@@ -87,6 +87,38 @@ after(stopServer);
 beforeEach(resetDb);
 
 describe('организационные назначения и доступ', () => {
+  it('редактирует базу и запрещает её архивирование при действующих назначениях', async () => {
+    const ctx = await setup();
+    const renamed = await api('PATCH', `/api/admin/org/bases/${ctx.baseId}`, {
+      token: ctx.adminToken,
+      body: { name: 'Северная база обновлена', code: 'NORTH-2' },
+    });
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+    assert.equal(renamed.body.name, 'Северная база обновлена');
+    const archive = await api('PATCH', `/api/admin/org/bases/${ctx.baseId}`, {
+      token: ctx.adminToken,
+      body: { name: 'Северная база обновлена', code: 'NORTH-2', isActive: false },
+    });
+    assert.equal(archive.status, 409);
+  });
+
+  it('разрешает только одного действующего старшего механика на всю компанию', async () => {
+    const admin = await createUser('ADMIN');
+    const adminToken = await tokenFor(admin.login);
+    const first = await createUser('USER');
+    const second = await createUser('USER');
+    const assigned = await api('PUT', `/api/admin/org/users/${first.id}/roles`, {
+      token: adminToken,
+      body: { roles: ['SENIOR_MECHANIC'] },
+    });
+    assert.equal(assigned.status, 200, JSON.stringify(assigned.body));
+    const duplicate = await api('PUT', `/api/admin/org/users/${second.id}/roles`, {
+      token: adminToken,
+      body: { roles: ['SENIOR_MECHANIC'] },
+    });
+    assert.equal(duplicate.status, 409);
+  });
+
   it('заменяет legacy-заглушку назначением в тот же день без потери истории карточки', async () => {
     const ctx = await setup();
     const user = await createUser('USER');
@@ -230,6 +262,23 @@ describe('организационные назначения и доступ', 
     const history = await api('GET', `/api/org/employees/${ctx.employeeCard.id}/history`, { token: ctx.coordinatorToken });
     assert.equal(history.status, 200);
     assert.ok(history.body.length >= 1);
+  });
+
+  it('сводка по удостоверениям ограничена активной зоной менеджера и координатора', async () => {
+    const ctx = await setup();
+    const managerSummary = await api('GET', '/api/admin/overview', { token: ctx.managerToken });
+    assert.equal(managerSummary.status, 200);
+    assert.deepEqual(
+      managerSummary.body.rows.map((row: { user: { id: number } }) => row.user.id).sort((a: number, b: number) => a - b),
+      [ctx.manager.id, ctx.coordinator.id, ctx.replacementCoordinator.id, ctx.employee.id].sort((a, b) => a - b),
+    );
+
+    const coordinatorSummary = await api('GET', '/api/admin/overview', { token: ctx.coordinatorToken });
+    assert.equal(coordinatorSummary.status, 200);
+    assert.deepEqual(
+      coordinatorSummary.body.rows.map((row: { user: { id: number } }) => row.user.id).sort((a: number, b: number) => a - b),
+      [ctx.coordinator.id, ctx.employee.id].sort((a, b) => a - b),
+    );
   });
 });
 

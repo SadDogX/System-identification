@@ -7,35 +7,37 @@ import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
 import { recent } from '../audit/auditLog.service.ts';
 import { unreadCount } from '../notifications/notifications.service.ts';
+import { manageableUserIds } from '../../core/organizationAccess.ts';
 
 export async function getDashboard(admin: User): Promise<DashboardDto> {
   const { settings, today } = await getDateContext();
+  const userIds = await manageableUserIds(admin);
   const red = statusWhere('RED', today, settings);
   const yellow = statusWhere('YELLOW', today, settings);
 
   const [totalUsers, statusCounts, upcomingRows, criticalGroups, recentChanges, unread] = await Promise.all([
-    prisma.user.count({ where: { role: 'USER', isDeleted: false } }),
+    prisma.user.count({ where: { role: 'USER', isDeleted: false, ...(userIds.length && { id: { in: userIds } }) } }),
     Promise.all(
       CREDENTIAL_STATUSES.map((s) =>
-        prisma.userCredential.count({ where: { ...visibleCredentialWhere, ...statusWhere(s, today, settings) } }),
+        prisma.userCredential.count({ where: { ...visibleCredentialWhere, ...(userIds.length && { userId: { in: userIds } }), ...statusWhere(s, today, settings) } }),
       ),
     ),
     // Ближайшие истечения: красные и жёлтые, начиная с самых срочных
     prisma.userCredential.findMany({
-      where: { ...visibleCredentialWhere, OR: [red, yellow] },
+      where: { ...visibleCredentialWhere, ...(userIds.length && { userId: { in: userIds } }), OR: [red, yellow] },
       include: { credential: true, user: { select: { id: true, fullName: true, login: true } } },
       orderBy: { expiryDate: 'asc' },
       take: 10,
     }),
     prisma.userCredential.groupBy({
       by: ['userId'],
-      where: { ...visibleCredentialWhere, ...red },
+      where: { ...visibleCredentialWhere, ...(userIds.length && { userId: { in: userIds } }), ...red },
       _count: { _all: true },
       _min: { expiryDate: true },
       orderBy: { _min: { expiryDate: 'asc' } },
       take: 10,
     }),
-    recent(8),
+    userIds.length ? Promise.resolve([]) : recent(8),
     unreadCount(admin.id),
   ]);
 

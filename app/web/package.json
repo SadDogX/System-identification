@@ -15,7 +15,7 @@
   "devDependencies": {
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.28.2"
   },
   "description": "Веб-интерфейс (React), модули в src/modules"
 }
