@@ -42,6 +42,7 @@ export function PersonnelPage() {
   const employees = employeesQuery.data ?? [];
   const requiredSupervisor = role === 'COORDINATOR' ? 'MANAGER' : role === 'EMPLOYEE' ? 'COORDINATOR' : role === 'SHOP_EMPLOYEE' ? 'SHOP_FOREMAN' : role === 'MECHANIC' ? 'SENIOR_MECHANIC' : '';
   const supervisors = employees.filter((item) => item.user.systemRoles.some((grant) => grant.systemRole.code === requiredSupervisor) && (!baseId || item.assignments[0]?.baseId === Number(baseId)));
+  
   const create = useAction(async () => {
     const assignedSupervisorId = supervisorId || (supervisors.length === 1 ? String(supervisors[0].id) : '');
     if (!fullName.trim() || !login.trim() || !baseId || !positionId || (requiredSupervisor && !assignedSupervisorId)) throw new Error('Заполните карточку и назначение');
@@ -49,18 +50,23 @@ export function PersonnelPage() {
     const employee = await api.get<EmployeeIdentity>(`/org/users/${created.id}/employee`);
     await api.put(`/admin/org/users/${created.id}/roles`, { roles: [role] });
     await api.post(`/org/employees/${employee.id}/assignments`, { track, baseId: Number(baseId), positionId: Number(positionId), supervisorEmployeeId: assignedSupervisorId ? Number(assignedSupervisorId) : null, startsAt });
-  }, { onSuccess: () => {
-    setFeedback('Сотрудник создан и назначен. Временный пароль: user12345.');
-    setFullName(''); setLogin(''); setPhone(''); setEmail(''); setSupervisorId(''); setPositionId('');
-    invalidate('org:'); invalidate('admin:');
-  } });
+  }, {
+    onSuccess: () => {
+      setFeedback('Сотрудник создан и назначен. Временный пароль: user12345.');
+      setFullName(''); setLogin(''); setPhone(''); setEmail(''); setSupervisorId(''); setPositionId('');
+      invalidate('org:'); invalidate('admin:');
+    }
+  });
 
   return <>
-    <PageHeader title="Персонал БПО" subtitle="Справочник сотрудников и полная форма создания с назначением" actions={<Link to="/admin/org/assignments" className="btn">Назначения и распределение</Link>} />
+    <PageHeader
+      title="Персонал БПО"
+      subtitle="Справочник сотрудников и полная форма создания с назначением"
+      actions={<Link to="/admin/org/assignments" className="btn">Назначения и распределение</Link>} />
     <div className="row wrap" style={{ marginBottom: 16 }}>
       <button className={`btn${!showForm ? ' btn-primary' : ''}`} onClick={() => setShowForm(false)}>Справочник персонала</button>
       <button className={`btn${showForm ? ' btn-primary' : ''}`} onClick={() => setShowForm(true)}>Добавить сотрудника</button>
-      <Link to="/admin/org/transfers" className="btn">Переводы</Link>
+      {/* <Link to="/admin/org/transfers" className="btn">Переводы</Link> */}
     </div>
     {feedback && <Alert kind="success">{feedback}</Alert>}
     {(basesQuery.error || positionsQuery.error || employeesQuery.error) && <Alert>{basesQuery.error ?? positionsQuery.error ?? employeesQuery.error}</Alert>}

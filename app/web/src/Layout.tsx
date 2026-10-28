@@ -60,9 +60,26 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
       { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_ADMIN_ITEMS },
     ]
   },
-  { label: 'Оборудование', icon: 'grid', items: [{ to: '/admin/equipment', label: 'Оборудование', icon: 'grid' }] },
-  { label: 'Организация БПО', icon: 'people', items: [{ to: '/admin/org/personnel', label: 'Персонал', icon: 'people' }, { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' }, { to: '/admin/org/assignments', label: 'Назначения', icon: 'doneAll' }, { to: '/admin/org/transfers', label: 'Переводы', icon: 'history' }, { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' }, { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' }] },
-  { label: 'Справочники', icon: 'book', items: [{ to: '/admin/dictionaries/bases', label: 'Базы', icon: 'grid' }, { to: '/admin/dictionaries/organization', label: 'Статусы и виды работ', icon: 'book' }, { to: '/admin/positions', label: 'Должности', icon: 'work' }, { to: '/admin/catalog', label: 'Удостоверения', icon: 'badge' }] },
+  // {
+  //   label: 'Оборудование', icon: 'grid',
+  //   items: [{ to: '/admin/equipment', label: 'Оборудование', icon: 'grid' }]
+  // },
+  {
+    label: 'Организация БПО', icon: 'people',
+    items: [{ to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
+    { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' },
+    { to: '/admin/org/assignments', label: 'Назначения', icon: 'doneAll' },
+    { to: '/admin/org/transfers', label: 'Переводы', icon: 'history' },
+    { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
+    { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' }]
+  },
+  {
+    label: 'Справочники', icon: 'book',
+    items: [{ to: '/admin/dictionaries/bases', label: 'Базы', icon: 'grid' },
+    { to: '/admin/dictionaries/organization', label: 'Статусы и виды работ', icon: 'book' },
+    { to: '/admin/positions', label: 'Должности', icon: 'work' },
+    { to: '/admin/catalog', label: 'Удостоверения', icon: 'badge' }]
+  },
   { label: 'Общие разделы', icon: 'grid', items: ROOT_ADMIN_ITEMS },
 ];
 const USER_NAV_GROUPS: NavGroup[] = [{
@@ -74,11 +91,13 @@ const USER_NAV_GROUPS: NavGroup[] = [{
 }, { label: 'Общие разделы', icon: 'grid', items: ROOT_USER_ITEMS }];
 const LEAD_NAV_GROUPS: NavGroup[] = [
   ...USER_NAV_GROUPS,
-  { label: 'Моя команда', icon: 'people', items: [
-    { to: '/admin/dashboard', label: 'Сводка команды', icon: 'dashboard' },
-    { to: '/admin/overview', label: 'Удостоверения команды', icon: 'overview' },
-    { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
-  ] },
+  {
+    label: 'Моя команда', icon: 'people', items: [
+      { to: '/admin/dashboard', label: 'Сводка команды', icon: 'dashboard' },
+      { to: '/admin/overview', label: 'Удостоверения команды', icon: 'overview' },
+      { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
+    ]
+  },
 ];
 const CREDENTIAL_LEAD_NAV_GROUPS: NavGroup[] = [
   ...USER_NAV_GROUPS,
