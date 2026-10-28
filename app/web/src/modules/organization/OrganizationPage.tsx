@@ -39,7 +39,9 @@ const today = () => {
 
 const trackFor = (role: string) => (['SENIOR_MECHANIC', 'MECHANIC', 'SHOP_FOREMAN', 'SHOP_EMPLOYEE'].includes(role) ? 'R_AND_M' : 'TRS');
 
-export function OrganizationPage() {
+type OrganizationView = 'overview' | 'structure' | 'assignments' | 'transfers';
+
+export function OrganizationPage({ view = 'overview' }: { view?: OrganizationView }) {
   const user = useCurrentUser();
   const isAdmin = user.role === 'ADMIN';
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -81,6 +83,8 @@ export function OrganizationPage() {
   const minesQuery = useQuery('org:mines', () => api.get<Mine[]>('/org/mines'));
   const mines = minesQuery.data ?? [];
   const coordinators = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === 'COORDINATOR'));
+  const showStructure = view === 'overview' || view === 'structure';
+  const showAssignmentForm = view === 'overview' || view === 'assignments' || view === 'transfers';
 
   const refresh = () => {
     invalidate('org:');
@@ -150,15 +154,19 @@ export function OrganizationPage() {
   return (
     <>
       <PageHeader
-        title={isAdmin ? 'Организационная структура' : 'Моя база и команда'}
-        subtitle="Базы, месторождения, сотрудники и назначения с сохранением истории переводов"
+        title={view === 'assignments' ? 'Назначения сотрудников' : view === 'transfers' ? 'Переводы сотрудников' : isAdmin ? 'Организационная структура' : 'Моя база и команда'}
+        subtitle={view === 'assignments'
+          ? 'Назначение сотрудников на базу, должность и руководителя'
+          : view === 'transfers'
+            ? 'Перевод сотрудника с фиксацией прежнего и нового назначения'
+            : 'Базы, месторождения, сотрудники и назначения с сохранением истории переводов'}
       />
       {(basesQuery.error || employeesQuery.error || positionsQuery.error || rolesQuery.error || minesQuery.error) && (
         <Alert>{basesQuery.error ?? employeesQuery.error ?? positionsQuery.error ?? rolesQuery.error ?? minesQuery.error}</Alert>
       )}
       {errorMessageText && <Alert>{errorMessageText}</Alert>}
 
-      {isAdmin && (
+      {showStructure && isAdmin && (
         <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
           <h2 className="section-title">Базы</h2>
           <div className="row wrap">
@@ -203,15 +211,18 @@ export function OrganizationPage() {
           {employees.length === 0 && <div className="empty">Нет сотрудников в доступной области.</div>}
         </div>
 
-        {(isAdmin || isManager) && (
+        {showAssignmentForm && (isAdmin || isManager) && (
           <form className="panel" style={{ padding: 16, marginTop: 18 }} onSubmit={async (event) => {
             event.preventDefault();
             setErrorMessageText('');
             await assignEmployee.run();
           }}>
-            <h3 className="section-title">{isAdmin ? 'Назначить сотрудника' : 'Перевести сотрудника внутри своей базы'}</h3>
+            <h3 className="section-title">
+              {view === 'transfers' ? 'Оформить перевод сотрудника' : isAdmin ? 'Назначить сотрудника' : 'Перевести сотрудника внутри своей базы'}
+            </h3>
+            {view === 'transfers' && <p className="muted">Укажите новые условия назначения. Текущее назначение будет закрыто и сохранено в истории.</p>}
             <div className="row wrap">
-              <SelectField label="Сотрудник" value={selectedEmployeeId} onChange={(event) => {
+              <SelectField label={view === 'transfers' ? 'Сотрудник для перевода' : 'Сотрудник'} value={selectedEmployeeId} onChange={(event) => {
                 setSelectedEmployeeId(event.target.value);
                 const employee = employees.find((item) => String(item.id) === event.target.value);
                 const assignment = employee?.assignments[0];
@@ -242,7 +253,7 @@ export function OrganizationPage() {
                 {supervisors.map((employee) => <option key={employee.id} value={employee.id}>{employee.user.fullName}</option>)}
               </SelectField>}
               <TextField label="Дата начала" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
-              <TextField label="Причина перевода" value={reason} onChange={(event) => setReason(event.target.value)} />
+              <TextField label={view === 'transfers' ? 'Причина перевода' : 'Причина назначения или перевода'} value={reason} onChange={(event) => setReason(event.target.value)} />
               <button
                 className="btn btn-primary"
                 disabled={
@@ -253,7 +264,7 @@ export function OrganizationPage() {
                   (!!supervisorRole && !selectedSupervisorId)
                 }
               >
-                <Icon name="doneAll" small /> Сохранить назначение
+                <Icon name="doneAll" small /> {view === 'transfers' ? 'Оформить перевод' : 'Сохранить назначение'}
               </button>
             </div>
             {Boolean(assignEmployee.error) && <Alert>{errorMessage(assignEmployee.error)}</Alert>}
@@ -261,7 +272,7 @@ export function OrganizationPage() {
         )}
       </section>
 
-      <section className="panel" style={{ padding: 18 }}>
+      {showStructure && <section className="panel" style={{ padding: 18 }}>
         <h2 className="section-title">Месторождения</h2>
         {isAdmin && <p className="muted">Сначала добавьте базу в «Справочники → Базы». Затем выберите её здесь и создайте для неё месторождение; скважины добавляются ниже в карточке месторождения.</p>}
         {Array.from(mineByBase.entries()).map(([baseId, baseMines]) => {
@@ -319,7 +330,7 @@ export function OrganizationPage() {
           <button className="btn btn-primary" disabled={createWell.pending || !wellMineId || !wellName.trim()}><Icon name="add" small /> Добавить скважину</button>
         </form>}
         {Boolean(createWell.error) && <Alert>{errorMessage(createWell.error)}</Alert>}
-      </section>
+      </section>}
     </>
   );
 }

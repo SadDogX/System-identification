@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { NotificationDto, Paginated } from '@app/shared';
 import { api } from '../../core/api.ts';
-import { NotificationIcon, dismissRead, markAllRead, markRead } from './NotificationBell.tsx';
 import { Alert, ConfirmDialog, PageHeader, Pager, Icon } from '@app/shared/ui';
 import { useQuery } from '../../core/data.ts';
 import { useRouter } from '../../core/router.tsx';
 import { formatDateTime } from '../../core/utils.ts';
+import { NotificationIcon } from '../../widgets/notifications/NotificationBell';
+import { dismissRead, markAllRead, markRead } from '../../widgets/notifications/notificationActions';
 
 type Kind = 'ALL' | 'EXPIRY' | 'MESSAGE';
 const TABS: { value: Kind; label: string }[] = [
@@ -70,7 +71,7 @@ export function NotificationsPage() {
         {data?.items.length === 0 && <div className="empty">Уведомлений нет</div>}
         {data?.items.map((n) => (
           <button key={n.id} type="button" className={`note${n.readAt ? '' : ' unread'}`} onClick={() => open(n)}>
-            <NotificationIcon n={n} />
+            <NotificationIcon notification={n} />
             <span className="grow">
               <span className="row wrap">
                 <span className="note-title">{n.title}</span>
