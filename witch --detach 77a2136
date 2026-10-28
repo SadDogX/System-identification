@@ -1,0 +1,18 @@
+*   [33m77a2136[m[33m ([m[1;31morigin/saddogx-system-identification-fixes[m[33m)[m Merge remote-tracking branch 'origin/master' into saddogx-system-identification-fixes
+[31m|[m[32m\[m  
+* [32m|[m [33m45f2185[m Refactor web UI into widgets and fix admin access
+[32m|[m [32m|[m * [33ma033493[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m fix: resolve MySQL RSA authentication
+[32m|[m [32m|[m[32m/[m  
+[32m|[m * [33m88c7fc6[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m checkpoint before database troubleshooting
+[32m|[m[32m/[m  
+* [33ma227d00[m Работа с кодексом, начала реализанции привязки сотрудников к руководителям и к базе.
+*   [33ma7f608c[m Merge pull request #1 from SadDogX/saddogx-trs-data-model-migration
+[34m|[m[35m\[m  
+[34m|[m * [33m3b72b0b[m[33m ([m[1;31morigin/saddogx-trs-data-model-migration[m[33m)[m Add TRS organizational model and workflows
+[34m|[m[34m/[m  
+* [33med1f23a[m Git Agent
+* [33m3421709[m рабочи результат немного изменений в коде,  добавлен новый файл миграции для профиля пользователя, а также внесены изменения в различные модули и компоненты приложения.
+* [33me6d602a[m Мои дополнения через Гордона, корочки выполнены,  график пока так себе
+* [33m5709060[m[33m ([m[1;31mupstream/master[m[33m, [m[1;31mupstream/HEAD[m[33m)[m продакшн мультикоре
+* [33m4bfb566[m Минимум зависимостей и новые функции учёта удостоверений
+* [33mdf0e6f9[m first
