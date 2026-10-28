@@ -57,6 +57,8 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
 export const requireSystemRole = (...roles: string[]) =>
   asyncHandler(async (req, _res, next) => {
     const user = currentUser(req);
+    if (user.role === 'ADMIN') return next();
+
     const grant = await prisma.userSystemRole.findFirst({
       where: { userId: user.id, revokedAt: null, systemRole: { code: { in: roles }, isActive: true } },
       select: { id: true },

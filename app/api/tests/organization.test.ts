@@ -87,6 +87,14 @@ after(stopServer);
 beforeEach(resetDb);
 
 describe('организационные назначения и доступ', () => {
+  it('разрешает legacy ADMIN без отдельной системной роли', async () => {
+    const admin = await createUser('ADMIN');
+    await prisma.userSystemRole.deleteMany({ where: { userId: admin.id } });
+    const token = await tokenFor(admin.login);
+    const res = await api('GET', '/api/admin/dashboard', { token });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  });
+
   it('редактирует базу и запрещает её архивирование при действующих назначениях', async () => {
     const ctx = await setup();
     const renamed = await api('PATCH', `/api/admin/org/bases/${ctx.baseId}`, {
