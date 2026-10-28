@@ -14,8 +14,10 @@ interface EmployeeIdentity { id: number }
 const FIELD_ROLES = [{ code: 'EMPLOYEE', label: 'Полевой сотрудник' }, { code: 'COORDINATOR', label: 'Координатор' }];
 const SHOP_ROLES = [{ code: 'SHOP_EMPLOYEE', label: 'Цеховой сотрудник' }, { code: 'MECHANIC', label: 'Механик' }, { code: 'SHOP_FOREMAN', label: 'Мастер цеха' }];
 
-/** Страница справочника персонала и полной формы добавления. Вход: карточка, назначение и роль; результат: созданный пользователь с оргназначением. */
-export function PersonnelPage() {
+type PersonnelMode = 'directory' | 'create';
+
+/** Справочник персонала или отдельный сценарий создания сотрудника. */
+export function PersonnelPage({ mode }: { mode: PersonnelMode }) {
   const basesQuery = useQuery('org:bases', () => api.get<Base[]>('/org/bases'));
   const positionsQuery = useQuery('org:personnel:positions', () => api.get<PositionDto[]>('/admin/positions'));
   const employeesQuery = useQuery('org:employees', () => api.get<Employee[]>('/org/employees'));
@@ -30,7 +32,7 @@ export function PersonnelPage() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const showForm = mode === 'create';
   const roles = track === 'TRS' ? FIELD_ROLES : SHOP_ROLES;
   const positions = positionsQuery.data ?? [];
   const visiblePositions = useMemo(() => positions.filter((item) => {
@@ -60,14 +62,11 @@ export function PersonnelPage() {
 
   return <>
     <PageHeader
-      title="Персонал БПО"
-      subtitle="Справочник сотрудников и полная форма создания с назначением"
-      actions={<Link to="/admin/org/assignments" className="btn">Назначения и распределение</Link>} />
-    <div className="row wrap" style={{ marginBottom: 16 }}>
-      <button className={`btn${!showForm ? ' btn-primary' : ''}`} onClick={() => setShowForm(false)}>Справочник персонала</button>
-      <button className={`btn${showForm ? ' btn-primary' : ''}`} onClick={() => setShowForm(true)}>Добавить сотрудника</button>
-      {/* <Link to="/admin/org/transfers" className="btn">Переводы</Link> */}
-    </div>
+      title={showForm ? 'Добавление сотрудника' : 'Персонал БПО'}
+      subtitle={showForm ? 'Создание учётной записи с должностью и организационным назначением' : 'Справочник сотрудников и их текущие назначения'}
+      actions={showForm
+        ? <Link to="/admin/org/personnel" className="btn">К справочнику персонала</Link>
+        : <Link to="/admin/dictionaries/employees" className="btn btn-primary">Добавить сотрудника</Link>} />
     {feedback && <Alert kind="success">{feedback}</Alert>}
     {(basesQuery.error || positionsQuery.error || employeesQuery.error) && <Alert>{basesQuery.error ?? positionsQuery.error ?? employeesQuery.error}</Alert>}
     {showForm ? <form className="panel pad-lg stack" style={{ maxWidth: 900 }} onSubmit={(event) => { event.preventDefault(); setFeedback(''); create.run(); }}>

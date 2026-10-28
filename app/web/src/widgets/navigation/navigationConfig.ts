@@ -21,14 +21,12 @@ export interface NavGroup {
 }
 
 const USER_ITEMS: NavItem[] = [
-  { to: '/user/dashboard', label: 'Панель управления', icon: 'dashboard' },
   { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
   { to: '/user/work-execution', label: 'Договоры и работы', icon: 'doneAll' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
 ];
 
 const ADMIN_PEOPLE_ITEMS: NavItem[] = [
-  { to: '/admin/dashboard', label: 'Панель управления', icon: 'dashboard' },
   { to: '/admin/overview', label: 'Список удостоверений', icon: 'overview' },
   { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
 ];
@@ -47,13 +45,10 @@ const ROOT_ADMIN_ITEMS: NavItem[] = [
   { to: '/admin/notifications', label: 'Уведомления', icon: 'bell' },
   { to: '/admin/messages', label: 'Сообщения', icon: 'send' },
   { to: '/admin/audit-log', label: 'Аудит и логи', icon: 'history' },
-  { to: '/settings', label: 'Настройки интерфейса', icon: 'settings' },
 ];
 
 const ROOT_USER_ITEMS: NavItem[] = [
   { to: '/user/notifications', label: 'Уведомления', icon: 'bell' },
-  { to: '/user/profile', label: 'Профиль', icon: 'person' },
-  { to: '/settings', label: 'Настройки интерфейса', icon: 'settings' },
 ];
 
 const SCHEDULE_ADMIN_ITEMS: NavItem[] = [
@@ -69,10 +64,15 @@ const SCHEDULE_USER_ITEMS: NavItem[] = [
 
 const ADMIN_NAV_GROUPS: NavGroup[] = [
   {
+    label: 'Обзор',
+    icon: 'dashboard',
+    items: [{ to: '/admin/dashboard', label: 'Панель управления', icon: 'dashboard' }],
+  },
+  {
     label: 'Сотрудники',
     icon: 'people',
     subgroups: [
-      { label: 'Учёт удостоверений', icon: 'badge', items: ADMIN_PEOPLE_ITEMS },
+      { label: 'Удостоверения', icon: 'badge', items: ADMIN_PEOPLE_ITEMS },
       { label: 'WPTS', icon: 'grid', items: WPTS_ITEMS },
       { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_ADMIN_ITEMS },
     ],
@@ -105,10 +105,15 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
 
 const USER_NAV_GROUPS: NavGroup[] = [
   {
+    label: 'Обзор',
+    icon: 'dashboard',
+    items: [{ to: '/user/dashboard', label: 'Панель управления', icon: 'dashboard' }],
+  },
+  {
     label: 'Сотрудники',
     icon: 'people',
     subgroups: [
-      { label: 'Учёт удостоверений', icon: 'badge', items: USER_ITEMS },
+      { label: 'Работа и удостоверения', icon: 'badge', items: USER_ITEMS },
       { label: 'WPTS', icon: 'grid', items: USER_WPTS_ITEMS },
       { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_USER_ITEMS },
     ],
@@ -149,12 +154,16 @@ export function resolveNavGroups(user: UserDto): NavGroup[] {
   return USER_NAV_GROUPS;
 }
 
+export function isNavItemActive(path: string, to: string) {
+  return path === to;
+}
+
 export function groupHasActivePath(group: NavGroup, path: string) {
   return [...(group.items ?? []), ...(group.subgroups ?? []).flatMap((subgroup) => subgroup.items)].some(
-    (item) => path.startsWith(item.to),
+    (item) => isNavItemActive(path, item.to),
   );
 }
 
 export function subgroupHasActivePath(group: NavSubgroup, path: string) {
-  return group.items.some((item) => path.startsWith(item.to));
+  return group.items.some((item) => isNavItemActive(path, item.to));
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Icon } from '@app/shared/ui';
 import { Link } from '../../core/router.tsx';
-import { groupHasActivePath, subgroupHasActivePath, type NavGroup } from './navigationConfig';
+import { groupHasActivePath, isNavItemActive, subgroupHasActivePath, type NavGroup } from './navigationConfig';
 
 interface SidebarNavigationProps {
   navGroups: NavGroup[];
@@ -10,8 +10,12 @@ interface SidebarNavigationProps {
   onCloseMenu: () => void;
 }
 
-const DEFAULT_EXPANDED_GROUPS: Record<string, boolean> = { Сотрудники: true };
-const DEFAULT_EXPANDED_SUBGROUPS: Record<string, boolean> = { 'Учёт удостоверений': true, WPTS: true };
+const DEFAULT_EXPANDED_GROUPS: Record<string, boolean> = { Обзор: true, Сотрудники: true };
+const DEFAULT_EXPANDED_SUBGROUPS: Record<string, boolean> = {
+  Удостоверения: true,
+  'Работа и удостоверения': true,
+  WPTS: true,
+};
 
 function toggleExpansion(
   setter: Dispatch<SetStateAction<Record<string, boolean>>>,
@@ -49,7 +53,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
         <div className="sidebar-settings">
           <Link
             to="/settings"
-            className={`nav-link${path === '/settings' ? ' active' : ''}`}
+            className={`nav-link${isNavItemActive(path, '/settings') ? ' active' : ''}`}
             onClick={() => onCloseMenu()}
           >
             <Icon name="settings" />
@@ -79,7 +83,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
                       <Link
                         key={item.to}
                         to={item.to}
-                        className={`nav-link${path.startsWith(item.to) ? ' active' : ''}`}
+                        className={`nav-link${isNavItemActive(path, item.to) ? ' active' : ''}`}
                         onClick={() => onCloseMenu()}
                       >
                         <Icon name={item.icon} />
@@ -108,7 +112,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
                                 <Link
                                   key={item.to}
                                   to={item.to}
-                                  className={`nav-link${path.startsWith(item.to) ? ' active' : ''}`}
+                                  className={`nav-link${isNavItemActive(path, item.to) ? ' active' : ''}`}
                                   onClick={() => onCloseMenu()}
                                 >
                                   <Icon name={item.icon} />
