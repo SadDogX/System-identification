@@ -245,3 +245,8 @@ export const workAssignmentSchema = object(
   },
 );
 export type WorkAssignmentInput = Infer<typeof workAssignmentSchema>;
+
+export const workAssignmentStatusSchema = object({
+  statusCode: oneOf(['IN_PROGRESS', 'COMPLETED', 'CANCELLED'] as const),
+});
+export type WorkAssignmentStatusInput = Infer<typeof workAssignmentStatusSchema>;

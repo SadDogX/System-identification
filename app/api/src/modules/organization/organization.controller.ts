@@ -123,6 +123,14 @@ export async function createWorkAssignment(req: Request, res: Response) {
   res.status(201).json(await service.createWorkAssignment(currentUser(req), req.body));
 }
 
+export async function updateWorkAssignment(req: Request, res: Response) {
+  res.json(await service.updateWorkAssignment(currentUser(req), idParam(req, 'workAssignmentId'), req.body));
+}
+
+export async function updateWorkAssignmentStatus(req: Request, res: Response) {
+  res.json(await service.updateWorkAssignmentStatus(currentUser(req), idParam(req, 'workAssignmentId'), req.body));
+}
+
 export async function listStatuses(req: Request, res: Response) {
   res.json(await service.listStatuses(categoryParam(req)));
 }

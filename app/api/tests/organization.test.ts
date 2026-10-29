@@ -414,6 +414,135 @@ describe('договорное основание выполнения рабо�
 });
 
 describe('планирование выездов на работы', () => {
+  it('не допускает пересечение выездов одного сотрудника и позволяет редактировать только план', async () => {
+    const ctx = await setup();
+    const workType = await prisma.workType.create({
+      data: { code: 'OVERLAP_TEST', name: 'Плановая работа', requiresContractPermission: true },
+    });
+    const planInput = {
+      baseId: ctx.baseId,
+      locationType: 'BASE',
+      workTypeId: workType.id,
+      startsAt: iso(1),
+      endsAt: iso(3),
+      responsibleEmployeeIds: [ctx.managerEmployee.id, ctx.employeeCard.id],
+    };
+    const first = await api('POST', '/api/org/work-assignments', { token: ctx.managerToken, body: planInput });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+
+    const touchingDates = await api('POST', '/api/org/work-assignments', {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(3), endsAt: iso(4) },
+    });
+    assert.equal(touchingDates.status, 409);
+
+    const second = await api('POST', '/api/org/work-assignments', {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(4), endsAt: iso(5) },
+    });
+    assert.equal(second.status, 201, JSON.stringify(second.body));
+    const conflictingEdit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(2), endsAt: iso(4) },
+    });
+    assert.equal(conflictingEdit.status, 409);
+
+    const edit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
+    });
+    assert.equal(edit.status, 200, JSON.stringify(edit.body));
+    assert.equal(edit.body.startsAt.slice(0, 10), iso(6));
+    const auditCount = await prisma.auditLog.count({
+      where: { action: 'organization.workAssignment.update', entityId: second.body.id },
+    });
+    const unchangedEdit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
+    });
+    assert.equal(unchangedEdit.status, 200);
+    assert.equal(
+      await prisma.auditLog.count({
+        where: { action: 'organization.workAssignment.update', entityId: second.body.id },
+      }),
+      auditCount,
+    );
+
+    const skipToCompleted = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'COMPLETED' },
+    });
+    assert.equal(skipToCompleted.status, 409);
+    const started = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'IN_PROGRESS' },
+    });
+    assert.equal(started.status, 200);
+    assert.equal(started.body.status.code, 'IN_PROGRESS');
+
+    const editStarted = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
+    });
+    assert.equal(editStarted.status, 409);
+    const cancelled = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'CANCELLED' },
+    });
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.body.status.code, 'CANCELLED');
+
+    const replacement = await api('POST', '/api/org/work-assignments', {
+      token: ctx.managerToken,
+      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
+    });
+    assert.equal(replacement.status, 201, JSON.stringify(replacement.body));
+    const inProgress = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'IN_PROGRESS' },
+    });
+    assert.equal(inProgress.status, 200);
+    const completed = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'COMPLETED' },
+    });
+    assert.equal(completed.status, 200);
+    assert.equal(completed.body.status.code, 'COMPLETED');
+    const reopen = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
+      token: ctx.managerToken,
+      body: { statusCode: 'CANCELLED' },
+    });
+    assert.equal(reopen.status, 409);
+  });
+
+  it('запрещает участнику команды менять план и статус выезда', async () => {
+    const ctx = await setup();
+    const workType = await prisma.workType.create({
+      data: { code: 'ACCESS_TEST', name: 'План на проверку доступа', requiresContractPermission: true },
+    });
+    const input = {
+      baseId: ctx.baseId,
+      locationType: 'BASE',
+      workTypeId: workType.id,
+      startsAt: iso(1),
+      endsAt: iso(2),
+      responsibleEmployeeIds: [ctx.managerEmployee.id, ctx.employeeCard.id],
+    };
+    const plan = await api('POST', '/api/org/work-assignments', { token: ctx.managerToken, body: input });
+    assert.equal(plan.status, 201, JSON.stringify(plan.body));
+    const employeeToken = await tokenFor(ctx.employee.login);
+    const edit = await api('PATCH', `/api/org/work-assignments/${plan.body.id}`, {
+      token: employeeToken,
+      body: { ...input, endsAt: iso(3) },
+    });
+    assert.equal(edit.status, 403);
+    const status = await api('PATCH', `/api/org/work-assignments/${plan.body.id}/status`, {
+      token: employeeToken,
+      body: { statusCode: 'IN_PROGRESS' },
+    });
+    assert.equal(status.status, 403);
+  });
+
   it('проверяет руководителя команды, место работы и ограничивает личный список сотрудника', async () => {
     const ctx = await setup();
     const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
