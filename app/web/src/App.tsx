@@ -28,7 +28,6 @@ import { WorkExecutionPage } from './modules/organization/WorkExecutionPage.tsx'
 import { BaseCatalogPage } from './modules/organization/BaseCatalogPage.tsx';
 import { ReferenceDataPage } from './modules/organization/ReferenceDataPage.tsx';
 import { SettingsPage } from './modules/settings/SettingsPage.tsx';
-import { ModulePlaceholderPage } from './modules/common/ModulePlaceholderPage.tsx';
 import { PersonnelPage } from './modules/organization/PersonnelPage.tsx';
 import { WorkAssignmentsPage } from './modules/organization/WorkAssignmentsPage.tsx';
 
@@ -53,7 +52,6 @@ const ROUTES: Route[] = [
   { path: '/admin/work-schedule/shift-partners', role: 'ADMIN', render: () => <ShiftPartnersPage /> },
   { path: '/admin/radar-cards', role: 'ADMIN', render: () => <RadarCardsPage /> },
   { path: '/admin/ifo', role: 'ADMIN', render: () => <IfoPage /> },
-  { path: '/admin/equipment', role: 'ADMIN', render: () => <ModulePlaceholderPage title="Оборудование" description="Учёт и контроль оборудования организации" icon="grid" /> },
   { path: '/admin/work-execution', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <WorkExecutionPage /> },
   { path: '/admin/organization', role: 'ADMIN', systemRoles: ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC', 'MECHANIC', 'SHOP_FOREMAN'], render: () => <OrganizationPage key="structure" view="structure" /> },
   { path: '/admin/dictionaries/bases', role: 'ADMIN', render: () => <BaseCatalogPage /> },
