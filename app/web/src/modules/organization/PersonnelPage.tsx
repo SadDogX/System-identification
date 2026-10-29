@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { DEFAULT_TEMP_PASSWORD, type PositionDto } from '@app/shared';
-import { api, errorMessage } from '../../core/api.ts';
+import { api } from '../../core/api.ts';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, Dialog, PageHeader, SelectField, TextField } from '@app/shared/ui';
 import { Link } from '../../core/router.tsx';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 type Track = 'TRS' | 'R_AND_M';
 interface Base { id: number; name: string; code: string | null }
@@ -103,7 +104,7 @@ export function PersonnelPage({ mode }: { mode: PersonnelMode }) {
         {requiredSupervisor && <SelectField label="Непосредственный руководитель *" value={supervisorId || (supervisors.length === 1 ? String(supervisors[0].id) : '')} onChange={(event) => setSupervisorId(event.target.value)}><option value="">Выберите руководителя</option>{supervisors.map((item) => <option key={item.id} value={item.id}>{item.user.fullName}</option>)}</SelectField>}
         <TextField label="Дата начала назначения *" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
       </div>
-      {Boolean(create.error) && <Alert>{errorMessage(create.error)}</Alert>}
+      <ActionError error={create.error} />
       <button className="btn btn-primary" disabled={create.pending}>{create.pending ? 'Создание…' : 'Создать сотрудника'}</button>
     </form> : <div className="panel table-wrap"><table className="table"><thead><tr><th>Сотрудник</th><th>Тип</th><th>Должность</th><th>База</th><th>Роль</th></tr></thead><tbody>{employees.map((item) => { const assignment = item.assignments[0]; return <tr key={item.id} className="clickable" role="button" tabIndex={0} onClick={() => edit(item)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(item); } }}><td>{item.user.fullName}<div className="muted small">{item.user.login}</div></td><td>{assignment?.track === 'R_AND_M' ? 'Цеховой' : assignment?.track === 'TRS' ? 'Полевой' : 'Не назначен'}</td><td>{assignment?.position?.name ?? '—'}</td><td>{basesQuery.data?.find((base) => base.id === assignment?.baseId)?.name ?? '—'}</td><td>{item.user.systemRoles.map((grant) => grant.systemRole.code).join(', ')}</td></tr>; })}</tbody></table></div>}
     <Dialog
@@ -116,7 +117,7 @@ export function PersonnelPage({ mode }: { mode: PersonnelMode }) {
       <TextField label="ФИО *" value={editValues.fullName} onChange={(event) => setEditValues((current) => ({ ...current, fullName: event.target.value }))} />
       <TextField label="Телефон" value={editValues.phone} onChange={(event) => setEditValues((current) => ({ ...current, phone: event.target.value }))} />
       <TextField label="Email" type="email" value={editValues.email} onChange={(event) => setEditValues((current) => ({ ...current, email: event.target.value }))} />
-      {Boolean(saveEmployee.error) && <Alert>{errorMessage(saveEmployee.error)}</Alert>}
+      <ActionError error={saveEmployee.error} />
     </Dialog>
   </>;
 }
