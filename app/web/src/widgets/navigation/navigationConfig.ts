@@ -23,6 +23,7 @@ export interface NavGroup {
 const USER_ITEMS: NavItem[] = [
   { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
   { to: '/user/work-execution', label: 'Договоры и работы', icon: 'doneAll' },
+  { to: '/user/work-assignments', label: 'Мои выезды', icon: 'work' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
 ];
 
@@ -84,8 +85,8 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
       { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' },
-      { to: '/admin/org/assignments', label: 'Назначения', icon: 'doneAll' },
-      { to: '/admin/org/transfers', label: 'Переводы', icon: 'history' },
+      { to: '/admin/org/assignments', label: 'Назначения и переводы', icon: 'doneAll' },
+      { to: '/admin/work-assignments', label: 'Выезды на работы', icon: 'work' },
       { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
       { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
     ],

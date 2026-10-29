@@ -111,6 +111,18 @@ export async function createWell(req: Request, res: Response) {
   res.status(201).json(await service.createWell(currentUser(req), idParam(req, 'mineId'), req.body));
 }
 
+export async function updateEmployeeProfile(req: Request, res: Response) {
+  res.json(await service.updateEmployeeProfile(currentUser(req), idParam(req, 'employeeId'), req.body));
+}
+
+export async function listWorkAssignments(req: Request, res: Response) {
+  res.json(await service.listWorkAssignments(currentUser(req)));
+}
+
+export async function createWorkAssignment(req: Request, res: Response) {
+  res.status(201).json(await service.createWorkAssignment(currentUser(req), req.body));
+}
+
 export async function listStatuses(req: Request, res: Response) {
   res.json(await service.listStatuses(categoryParam(req)));
 }
