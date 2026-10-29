@@ -39,8 +39,16 @@ export type MineInput = Infer<typeof mineSchema>;
 export const wellSchema = object({
   name: text({ max: 150 }),
   code: optionalText(50),
+  clusterNumber: optionalText(50),
 });
 export type WellInput = Infer<typeof wellSchema>;
+
+export const employeeProfileSchema = object({
+  fullName: text({ max: 200 }),
+  phone: optionalText(50),
+  email: optionalText(150),
+});
+export type EmployeeProfileInput = Infer<typeof employeeProfileSchema>;
 
 export const assignmentSchema = object({
   track: oneOf(['TRS', 'R_AND_M'] as const),
@@ -205,3 +213,35 @@ export const workExecutionSchema = object({
   ),
 });
 export type WorkExecutionInput = Infer<typeof workExecutionSchema>;
+
+export const workAssignmentSchema = object(
+  {
+    baseId: int({ min: 1 }),
+    locationType: oneOf(['BASE', 'CLUSTER', 'WELL'] as const),
+    mineId: optionalId(),
+    wellId: optionalId(),
+    clusterNumber: optionalText(50),
+    workTypeId: int({ min: 1 }),
+    startsAt: dateValue,
+    endsAt: dateValue,
+    description: optionalText(10000),
+    responsibleEmployeeIds: matches(
+      (v): v is number[] => Array.isArray(v) && v.length > 0 && v.every((item) => Number.isInteger(item) && item > 0),
+      'Выберите руководителя и сотрудников',
+    ),
+  },
+  (value) => {
+    if (value.endsAt < value.startsAt) return ['endsAt', 'Дата окончания раньше даты начала'];
+    if (value.locationType === 'BASE' && (value.mineId || value.wellId || value.clusterNumber)) {
+      return ['locationType', 'Для работы на базе не выбираются месторождение, куст или скважина'];
+    }
+    if (value.locationType === 'CLUSTER' && (!value.mineId || !value.clusterNumber || value.wellId)) {
+      return ['clusterNumber', 'Для работы на кусту выберите месторождение и укажите номер куста'];
+    }
+    if (value.locationType === 'WELL' && (!value.mineId || !value.wellId || value.clusterNumber)) {
+      return ['wellId', 'Для работы на скважине выберите месторождение и скважину'];
+    }
+    return null;
+  },
+);
+export type WorkAssignmentInput = Infer<typeof workAssignmentSchema>;

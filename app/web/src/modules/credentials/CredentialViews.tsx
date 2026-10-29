@@ -4,7 +4,8 @@ import { api } from '../../core/api.ts';
 import { useAuth } from '../../core/auth.tsx';
 import { useIsMobile } from '../../core/data.ts';
 import { Link } from '../../core/router.tsx';
-import { Icon, StatusBadge } from '@app/shared/ui';
+import { StatusBadge } from '@app/shared/ui';
+export { ViewToggle } from '../../widgets/display';
 
 /**
  * Режим «Таблица / Карточки» хранится в настройках пользователя на сервере.
@@ -24,20 +25,6 @@ export function useViewMode(): [ViewMode, (mode: ViewMode) => void, boolean] {
   };
 
   return [isMobile ? 'cards' : local, change, isMobile];
-}
-
-export function ViewToggle({ value, onChange, hidden }: { value: ViewMode; onChange: (v: ViewMode) => void; hidden?: boolean }) {
-  if (hidden) return null;
-  return (
-    <div className="toggle-group" role="group" aria-label="Вид">
-      <button type="button" className={value === 'table' ? 'active' : ''} onClick={() => onChange('table')}>
-        <Icon name="table" small /> Таблица
-      </button>
-      <button type="button" className={value === 'cards' ? 'active' : ''} onClick={() => onChange('cards')}>
-        <Icon name="grid" small /> Карточки
-      </button>
-    </div>
-  );
 }
 
 interface ViewProps {

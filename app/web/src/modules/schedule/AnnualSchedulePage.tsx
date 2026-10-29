@@ -3,16 +3,98 @@ import type { WorkDayStatus, WorkScheduleAnnualDto } from '@app/shared';
 import { api } from '../../core/api.ts';
 import { useQuery } from '../../core/data.ts';
 import { useRouter } from '../../core/router.tsx';
-import { Alert, PageHeader, TextField } from '@app/shared/ui';
+import { Alert, TextField } from '@app/shared/ui';
+import { ScheduleControlPanel, getScheduleDates, getScheduleMonthName, WORK_SCHEDULE_CODES, WORK_SCHEDULE_COLORS } from '../../widgets/schedule';
 
-const CODES: Record<WorkDayStatus, string> = { WORK: 'W', FREE_SHIFT: 'F', TRAVEL: 'T', SICK_LEAVE: 'S', VACATION: 'V', TRAINING: 'TR' };
-const COLORS: Record<WorkDayStatus, string> = { WORK: '#1f4e79', FREE_SHIFT: '#2e7d32', TRAVEL: '#f2c94c', SICK_LEAVE: '#c62828', VACATION: '#8e44ad', TRAINING: '#00838f' };
-const monthName = (month: number) => new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(new Date(2020, month, 1));
-const days = (year: number) => { const out: string[] = []; for (let d = new Date(Date.UTC(year, 0, 1)); d.getUTCFullYear() === year; d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10)); return out; };
 const holidays = new Set(['01-01', '01-02', '01-03', '01-04', '01-05', '01-06', '01-07', '01-08', '02-23', '03-08', '05-01', '05-09', '06-12', '11-04']);
 const weekend = (date: string) => [0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
 
 export function AnnualSchedulePage() {
-  const { navigate } = useRouter(); const [year, setYear] = useState(new Date().getFullYear()); const [collapsed, setCollapsed] = useState(false); const { data, error } = useQuery(`schedule:annual:${year}`, () => api.get<WorkScheduleAnnualDto>('/admin/work-schedule/annual', { year })); const allDays = days(year); const months = Array.from({ length: 12 }, (_, m) => allDays.filter((d) => new Date(`${d}T00:00:00Z`).getUTCMonth() === m));
-  return <><div className={`schedule-control-panel${collapsed ? ' collapsed' : ''}`}><div className="schedule-control-head"><PageHeader title="Общий график сотрудников" subtitle={collapsed ? undefined : 'Все сотрудники за выбранный год'} /><button type="button" className="btn btn-outline" onClick={() => setCollapsed((v) => !v)}>{collapsed ? 'Развернуть' : 'Свернуть'}</button></div>{!collapsed && <div className="row mb"><TextField label="Год" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></div>}</div>{error && <Alert>{error}</Alert>}<div className="annual-schedule-wrap"><div className="annual-schedule-scrollbar" aria-hidden="true" /><table className="annual-schedule"><thead><tr><th className="annual-name" rowSpan={2}>ФИО</th>{months.map((month, index) => <th className={`annual-month month-${index % 2}`} key={index} colSpan={month.length}>{monthName(index)}</th>)}</tr><tr>{months.flatMap((month, index) => month.map((date) => <th className={`annual-day-head month-${index % 2}${holidays.has(date.slice(5)) ? ' holiday' : ''}${weekend(date) ? ' weekend' : ''}`} key={date}>{Number(date.slice(8, 10))}</th>))}</tr></thead><tbody>{data?.rows.map((row) => { const map = new Map(row.entries.map((entry) => [entry.date, entry.status])); return <tr key={row.user.id}><th className="annual-name annual-person" onClick={() => navigate(`/admin/work-schedule/calendar?userId=${row.user.id}`)}>{row.user.fullName}</th>{allDays.map((date) => { const status = map.get(date); const month = Number(date.slice(5, 7)) - 1; return <td className={`month-${month % 2}${holidays.has(date.slice(5)) ? ' holiday' : ''}${weekend(date) ? ' weekend' : ''}`} key={date} style={{ background: status ? COLORS[status] : undefined, color: status && status !== 'TRAVEL' ? '#fff' : 'var(--text)' }} title={status ? CODES[status] : 'Не задано'}>{status ? CODES[status] : ''}</td>; })}</tr>; })}</tbody></table></div></>;
+  const { navigate } = useRouter();
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [collapsed, setCollapsed] = useState(false);
+  const { data, error } = useQuery(`schedule:annual:${year}`, () =>
+    api.get<WorkScheduleAnnualDto>('/admin/work-schedule/annual', { year }),
+  );
+  const allDays = getScheduleDates(year);
+  const months = Array.from({ length: 12 }, (_, month) =>
+    allDays.filter((date) => new Date(`${date}T00:00:00Z`).getUTCMonth() === month),
+  );
+
+  return (
+    <>
+      <ScheduleControlPanel
+        title="Общий график сотрудников"
+        subtitle="Все сотрудники за выбранный год"
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((value) => !value)}
+      >
+        <div className="row mb">
+          <TextField label="Год" type="number" value={year} onChange={(event) => setYear(Number(event.target.value))} />
+        </div>
+      </ScheduleControlPanel>
+      {error && <Alert>{error}</Alert>}
+      <div className="annual-schedule-wrap">
+        <div className="annual-schedule-scrollbar" aria-hidden="true" />
+        <table className="annual-schedule">
+          <thead>
+            <tr>
+              <th className="annual-name" rowSpan={2}>
+                ФИО
+              </th>
+              {months.map((month, index) => (
+                <th className={`annual-month month-${index % 2}`} key={index} colSpan={month.length}>
+                  {getScheduleMonthName(index)}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {months.flatMap((month, index) =>
+                month.map((date) => (
+                  <th
+                    className={`annual-day-head month-${index % 2}${holidays.has(date.slice(5)) ? ' holiday' : ''}${weekend(date) ? ' weekend' : ''}`}
+                    key={date}
+                  >
+                    {Number(date.slice(8, 10))}
+                  </th>
+                )),
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {data?.rows.map((row) => {
+              const statusByDate = new Map(row.entries.map((entry) => [entry.date, entry.status]));
+              return (
+                <tr key={row.user.id}>
+                  <th
+                    className="annual-name annual-person"
+                    onClick={() => navigate(`/admin/work-schedule/calendar?userId=${row.user.id}`)}
+                  >
+                    {row.user.fullName}
+                  </th>
+                  {allDays.map((date) => {
+                    const status = statusByDate.get(date);
+                    const month = Number(date.slice(5, 7)) - 1;
+                    return (
+                      <td
+                        className={`month-${month % 2}${holidays.has(date.slice(5)) ? ' holiday' : ''}${weekend(date) ? ' weekend' : ''}`}
+                        key={date}
+                        style={{
+                          background: status ? WORK_SCHEDULE_COLORS[status] : undefined,
+                          color: status && status !== 'TRAVEL' ? '#fff' : 'var(--text)',
+                        }}
+                        title={status ? WORK_SCHEDULE_CODES[status] : 'Не задано'}
+                      >
+                        {status ? WORK_SCHEDULE_CODES[status] : ''}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 }

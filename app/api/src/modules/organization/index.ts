@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, baseUpdateSchema, contractPermissionSchema, contractSchema, customerSchema, customerUpdateSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema, workTypeUpdateSchema } from './schemas.ts';
+import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, baseUpdateSchema, contractPermissionSchema, contractSchema, customerSchema, customerUpdateSchema, employeeProfileSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAssignmentSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema, workTypeUpdateSchema } from './schemas.ts';
 import { adminOnly, signedIn, type AppModule } from '../../core/module.ts';
 import { asyncHandler as h } from '../../core/asyncHandler.ts';
 import { validate } from '../../core/validate.ts';
@@ -21,6 +21,9 @@ organization.get('/users/:userId/employee', h(controller.getEmployee));
 organization.get('/employees/:employeeId/history', h(controller.employeeHistory));
 organization.post('/bases/:baseId/mines', validate(mineSchema), h(controller.createMine));
 organization.post('/mines/:mineId/wells', validate(wellSchema), h(controller.createWell));
+organization.patch('/employees/:employeeId/profile', validate(employeeProfileSchema), h(controller.updateEmployeeProfile));
+organization.get('/work-assignments', h(controller.listWorkAssignments));
+organization.post('/work-assignments', validate(workAssignmentSchema), h(controller.createWorkAssignment));
 organization.post('/employees/:employeeId/assignments', validate(assignmentSchema), h(controller.assignEmployee));
 organization.post('/mines/:mineId/coordinator', validate(mineCoordinatorSchema), h(controller.assignMineCoordinator));
 organization.post('/work/authorize', validate(workAuthorizationSchema), h(controller.authorizeWork));

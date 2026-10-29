@@ -87,6 +87,21 @@ after(stopServer);
 beforeEach(resetDb);
 
 describe('организационные назначения и доступ', () => {
+  it('редактирует профиль сотрудника и возвращает контакты в справочнике', async () => {
+    const ctx = await setup();
+    const updated = await api('PATCH', `/api/org/employees/${ctx.employeeCard.id}/profile`, {
+      token: ctx.adminToken,
+      body: { fullName: 'Новый сотрудник', phone: '+7 900 000-00-00', email: 'employee@example.test' },
+    });
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    const employees = await api('GET', '/api/org/employees', { token: ctx.adminToken });
+    assert.equal(employees.status, 200);
+    const employee = employees.body.find((item: { id: number }) => item.id === ctx.employeeCard.id);
+    assert.equal(employee.user.fullName, 'Новый сотрудник');
+    assert.equal(employee.user.phone, '+7 900 000-00-00');
+    assert.equal(employee.user.email, 'employee@example.test');
+  });
+
   it('разрешает legacy ADMIN без отдельной системной роли', async () => {
     const admin = await createUser('ADMIN');
     await prisma.userSystemRole.deleteMany({ where: { userId: admin.id } });
@@ -398,23 +413,121 @@ describe('договорное основание выполнения рабо�
   });
 });
 
+describe('планирование выездов на работы', () => {
+  it('проверяет руководителя команды, место работы и ограничивает личный список сотрудника', async () => {
+    const ctx = await setup();
+    const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
+      token: ctx.managerToken,
+      body: { name: 'Месторождение выездов', code: 'TRIPS-1' },
+    });
+    assert.equal(mine.status, 201);
+    const well = await api('POST', `/api/org/mines/${mine.body.id}/wells`, {
+      token: ctx.managerToken,
+      body: { name: 'Скважина выездов', clusterNumber: 'К-12' },
+    });
+    assert.equal(well.status, 201);
+    const workType = await prisma.workType.create({
+      data: { code: 'PLANNED_TEST', name: 'Спуск ОК', requiresContractPermission: true },
+    });
+
+    const missingLeader = await api('POST', '/api/org/work-assignments', {
+      token: ctx.managerToken,
+      body: {
+        baseId: ctx.baseId,
+        locationType: 'WELL',
+        mineId: mine.body.id,
+        wellId: well.body.id,
+        workTypeId: workType.id,
+        startsAt: iso(1),
+        endsAt: iso(3),
+        responsibleEmployeeIds: [ctx.employeeCard.id],
+      },
+    });
+    assert.equal(missingLeader.status, 400);
+
+    const created = await api('POST', '/api/org/work-assignments', {
+      token: ctx.managerToken,
+      body: {
+        baseId: ctx.baseId,
+        locationType: 'WELL',
+        mineId: mine.body.id,
+        wellId: well.body.id,
+        workTypeId: workType.id,
+        startsAt: iso(1),
+        endsAt: iso(3),
+        responsibleEmployeeIds: [ctx.coordinatorEmployee.id, ctx.employeeCard.id],
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.clusterNumber, 'К-12');
+    assert.equal(created.body.responsible.length, 2);
+
+    const ownPlans = await api('GET', '/api/org/work-assignments', { token: await tokenFor(ctx.employee.login) });
+    assert.equal(ownPlans.status, 200);
+    assert.deepEqual(ownPlans.body.map((plan: { id: number }) => plan.id), [created.body.id]);
+    const otherEmployeePlans = await api('GET', '/api/org/work-assignments', { token: ctx.replacementCoordinator ? await tokenFor(ctx.replacementCoordinator.login) : undefined });
+    assert.equal(otherEmployeePlans.status, 200);
+    assert.equal(otherEmployeePlans.body.length, 0);
+  });
+
+  it('разрешает координатору планировать только выезды в закреплённое месторождение', async () => {
+    const ctx = await setup();
+    const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
+      token: ctx.managerToken,
+      body: { name: 'Проект координатора', code: 'COORD-1' },
+    });
+    assert.equal(mine.status, 201);
+    const well = await api('POST', `/api/org/mines/${mine.body.id}/wells`, {
+      token: ctx.managerToken,
+      body: { name: 'Скважина куста', clusterNumber: 'К-8' },
+    });
+    assert.equal(well.status, 201);
+    const coordinatorAssignment = await api('POST', `/api/org/mines/${mine.body.id}/coordinator`, {
+      token: ctx.managerToken,
+      body: { coordinatorEmployeeId: ctx.coordinatorEmployee.id, startsAt: iso() },
+    });
+    assert.equal(coordinatorAssignment.status, 201);
+    const workType = await prisma.workType.create({
+      data: { code: 'COORD_PLAN_TEST', name: 'Заканчивание', requiresContractPermission: true },
+    });
+    const scheduled = await api('POST', '/api/org/work-assignments', {
+      token: ctx.coordinatorToken,
+      body: {
+        baseId: ctx.baseId,
+        locationType: 'CLUSTER',
+        mineId: mine.body.id,
+        clusterNumber: 'К-8',
+        workTypeId: workType.id,
+        startsAt: iso(2),
+        endsAt: iso(4),
+        responsibleEmployeeIds: [ctx.coordinatorEmployee.id, ctx.employeeCard.id],
+      },
+    });
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body));
+    const visible = await api('GET', '/api/org/work-assignments', { token: ctx.coordinatorToken });
+    assert.equal(visible.status, 200);
+    assert.deepEqual(visible.body.map((plan: { id: number }) => plan.id), [scheduled.body.id]);
+  });
+});
+
 describe('системные роли и справочники статусов', () => {
   it('расширяет статусный справочник без изменения схемы и оставляет его администратору', async () => {
     const ctx = await setup();
+    const statusCode = `WAITING_REVIEW_${ctx.admin.id}`;
     const denied = await api('POST', '/api/admin/org/statuses', {
       token: ctx.managerToken,
-      body: { category: 'work', code: 'WAITING_REVIEW', name: 'На проверке' },
+      body: { category: 'work', code: statusCode, name: 'На проверке' },
     });
     assert.equal(denied.status, 403);
 
     const created = await api('POST', '/api/admin/org/statuses', {
       token: ctx.adminToken,
-      body: { category: 'work', code: 'WAITING_REVIEW', name: 'На проверке', sortOrder: 10 },
+      body: { category: 'work', code: statusCode, name: 'На проверке', sortOrder: 10 },
     });
     assert.equal(created.status, 201);
     const listed = await api('GET', '/api/org/statuses/work', { token: ctx.managerToken });
     assert.equal(listed.status, 200);
-    assert.ok(listed.body.some((status: { code: string }) => status.code === 'WAITING_REVIEW'));
+    assert.ok(listed.body.some((status: { code: string }) => status.code === statusCode));
 
     const deactivated = await api('PATCH', `/api/admin/org/statuses/work/${created.body.id}`, {
       token: ctx.adminToken,

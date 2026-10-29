@@ -30,6 +30,7 @@ import { ReferenceDataPage } from './modules/organization/ReferenceDataPage.tsx'
 import { SettingsPage } from './modules/settings/SettingsPage.tsx';
 import { ModulePlaceholderPage } from './modules/common/ModulePlaceholderPage.tsx';
 import { PersonnelPage } from './modules/organization/PersonnelPage.tsx';
+import { WorkAssignmentsPage } from './modules/organization/WorkAssignmentsPage.tsx';
 
 interface Route {
   path: string;
@@ -45,6 +46,7 @@ const ROUTES: Route[] = [
   { path: '/admin/org/personnel', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <PersonnelPage key="directory" mode="directory" /> },
   { path: '/admin/org/assignments', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <OrganizationPage key="assignments" view="assignments" /> },
   { path: '/admin/org/transfers', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <OrganizationPage key="transfers" view="transfers" /> },
+  { path: '/admin/work-assignments', role: 'ADMIN', systemRoles: ['MANAGER', 'COORDINATOR'], render: () => <WorkAssignmentsPage /> },
   { path: '/admin/org/contracts', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <WorkExecutionPage /> },
   { path: '/admin/work-schedule', role: 'ADMIN', render: () => <AnnualSchedulePage /> },
   { path: '/admin/work-schedule/calendar', role: 'ADMIN', render: () => <WorkSchedulePage admin /> },
@@ -70,6 +72,7 @@ const ROUTES: Route[] = [
   { path: '/user/dashboard', role: 'USER', render: () => <UserDashboardPage /> },
   { path: '/user/organization', role: 'USER', render: () => <OrganizationPage /> },
   { path: '/user/work-execution', role: 'USER', render: () => <WorkExecutionPage /> },
+  { path: '/user/work-assignments', role: 'USER', render: () => <WorkAssignmentsPage /> },
   { path: '/user/credentials', role: 'USER', render: () => <UserCredentialsPage /> },
   { path: '/user/notifications', role: 'USER', render: () => <NotificationsPage /> },
   { path: '/user/profile', role: 'USER', render: () => <ProfilePage /> },
