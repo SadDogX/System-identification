@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { api, errorMessage } from '../../core/api.ts';
+import { api } from '../../core/api.ts';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, Checkbox, PageHeader, SelectField, TextField } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 type StatusCategory = 'assignment' | 'contract' | 'addendum' | 'work';
 interface StatusItem { id: number; code: string; name: string; sortOrder: number; isActive: boolean; allowsWork?: boolean }
@@ -59,7 +60,7 @@ export function ReferenceDataPage() {
         </SelectField>
       </div>
       {statuses.error && <Alert>{statuses.error}</Alert>}
-      {Boolean(createStatus.error) && <Alert>{errorMessage(createStatus.error)}</Alert>}
+      <ActionError error={createStatus.error} />
       <form className="row wrap" style={{ alignItems: 'flex-end', marginBottom: 16 }} onSubmit={(event) => { event.preventDefault(); if (code.trim() && name.trim()) createStatus.run(); }}>
         <TextField label="Код" value={code} onChange={(event) => setCode(event.target.value)} />
         <TextField label="Название" value={name} onChange={(event) => setName(event.target.value)} />
@@ -87,13 +88,13 @@ export function ReferenceDataPage() {
           </tr>;
         })}</tbody>
       </table></div>
-      {Boolean(updateStatus.error) && <Alert>{errorMessage(updateStatus.error)}</Alert>}
+      <ActionError error={updateStatus.error} />
     </section>
 
     <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
       <h2 className="section-title">Заказчики</h2>
       {customers.error && <Alert>{customers.error}</Alert>}
-      {Boolean(createCustomer.error) && <Alert>{errorMessage(createCustomer.error)}</Alert>}
+      <ActionError error={createCustomer.error} />
       <form className="row wrap" style={{ alignItems: 'flex-end', marginBottom: 16 }} onSubmit={(event) => { event.preventDefault(); if (customerName.trim()) createCustomer.run(); }}>
         <TextField label="Новый заказчик" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
         <TextField label="Код" value={customerCode} onChange={(event) => setCustomerCode(event.target.value)} />
@@ -110,13 +111,13 @@ export function ReferenceDataPage() {
           </tr>;
         })}
       </tbody></table></div>
-      {Boolean(updateCustomer.error) && <Alert>{errorMessage(updateCustomer.error)}</Alert>}
+      <ActionError error={updateCustomer.error} />
     </section>
 
     <section className="panel" style={{ padding: 18 }}>
       <h2 className="section-title">Виды работ</h2>
       {workTypes.error && <Alert>{workTypes.error}</Alert>}
-      {Boolean(createWorkType.error) && <Alert>{errorMessage(createWorkType.error)}</Alert>}
+      <ActionError error={createWorkType.error} />
       <form className="row wrap" style={{ alignItems: 'flex-end', marginBottom: 16 }} onSubmit={(event) => { event.preventDefault(); if (workTypeName.trim() && workTypeCode.trim()) createWorkType.run(); }}>
         <TextField label="Новый вид работ" value={workTypeName} onChange={(event) => setWorkTypeName(event.target.value)} />
         <TextField label="Код" value={workTypeCode} onChange={(event) => setWorkTypeCode(event.target.value)} />
@@ -134,7 +135,7 @@ export function ReferenceDataPage() {
           </tr>;
         })}
       </tbody></table></div>
-      {Boolean(updateWorkType.error) && <Alert>{errorMessage(updateWorkType.error)}</Alert>}
+      <ActionError error={updateWorkType.error} />
     </section>
   </>;
 }

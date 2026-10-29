@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { api, errorMessage } from '../../core/api.ts';
+import { api } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, PageHeader, SelectField, TextField, TextArea } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 type LocationType = 'BASE' | 'CLUSTER' | 'WELL';
 interface Base { id: number; name: string; code?: string | null }
@@ -196,7 +197,7 @@ export function WorkAssignmentsPage() {
           })}
         </SelectField>
         <p className="muted small">В составе команды должен быть хотя бы один менеджер или координатор. Удерживайте Ctrl, чтобы выбрать нескольких сотрудников.</p>
-        {Boolean(create.error) && <Alert>{errorMessage(create.error)}</Alert>}
+        <ActionError error={create.error} />
         <button className="btn btn-primary" disabled={
           create.pending || !baseId || !workTypeId || !responsibleEmployeeIds.length ||
           (locationType !== 'BASE' && !mineId) ||

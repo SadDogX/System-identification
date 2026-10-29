@@ -3,6 +3,7 @@ import { api, errorMessage } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, Icon, PageHeader, SelectField, TextField } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 interface Base { id: number; name: string; code: string | null }
 interface Position { id: number; name: string }
@@ -264,7 +265,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                 <Icon name="doneAll" small /> {isTransfer ? 'Оформить перевод' : 'Сохранить назначение'}
               </button>
             </div>
-            {Boolean(assignEmployee.error) && <Alert>{errorMessage(assignEmployee.error)}</Alert>}
+            <ActionError error={assignEmployee.error} />
           </form>
       )}
 
@@ -312,7 +313,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
             <button className="btn btn-primary" disabled={createMine.pending || !mineName.trim() || (isAdmin && !selectedBaseId)}><Icon name="add" small /> Добавить</button>
           </form>
         )}
-        {Boolean(createMine.error) && <Alert>{errorMessage(createMine.error)}</Alert>}
+        <ActionError error={createMine.error} />
         {(isAdmin || isManager) && <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 18 }} onSubmit={(event) => {
           event.preventDefault();
           if (wellMineId) createWell.run(Number(wellMineId));
@@ -326,7 +327,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
           <TextField label="Номер куста" value={wellClusterNumber} onChange={(event) => setWellClusterNumber(event.target.value)} />
           <button className="btn btn-primary" disabled={createWell.pending || !wellMineId || !wellName.trim()}><Icon name="add" small /> Добавить скважину</button>
         </form>}
-        {Boolean(createWell.error) && <Alert>{errorMessage(createWell.error)}</Alert>}
+        <ActionError error={createWell.error} />
       </section>}
     </>
   );

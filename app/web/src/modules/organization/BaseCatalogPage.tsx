@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { api, errorMessage } from '../../core/api.ts';
+import { api } from '../../core/api.ts';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, PageHeader, TextField } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 interface BaseItem { id: number; name: string; code: string | null; isActive: boolean }
 
@@ -19,7 +20,7 @@ export function BaseCatalogPage() {
   return <>
     <PageHeader title="Справочник баз" subtitle="Организационные базы и их активность" />
     {error && <Alert>{error}</Alert>}
-    {create.error && <Alert>{errorMessage(create.error)}</Alert>}
+    <ActionError error={create.error} />
     <form className="panel row wrap" style={{ padding: 16, alignItems: 'flex-end', marginBottom: 16 }} onSubmit={(event) => {
       event.preventDefault();
       if (name.trim()) create.run();
@@ -43,7 +44,7 @@ export function BaseCatalogPage() {
           </td>
         </tr>})}</tbody>
       </table>
-      {Boolean(update.error) && <Alert>{errorMessage(update.error)}</Alert>}
+      <ActionError error={update.error} />
     </div>
   </>;
 }
