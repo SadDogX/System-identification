@@ -13,12 +13,12 @@ const passwordHash = await hashPassword(PASSWORD);
 let server: Server;
 let baseUrl = '';
 
-/** Пересоздаёт схему тестовой БД (DATABASE_URL из .env.test) и поднимает сервер на свободном порту. */
+/** Синхронизирует схему тестовой БД и поднимает сервер на свободном порту. */
 export async function startServer() {
   if (!process.env.DATABASE_URL?.includes('_test')) {
     throw new Error('Тесты запускаются только на тестовой БД (имя должно содержать _test)');
   }
-  execSync('npx prisma db push --force-reset --skip-generate', { stdio: 'ignore', env: process.env });
+  execSync('npx prisma db push', { stdio: 'ignore', env: process.env });
   await initializeOrganizationCatalog();
   server = createApp().listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
