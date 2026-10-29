@@ -3,6 +3,7 @@ import { api, errorMessage } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, PageHeader, SelectField, TextField } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 interface Base { id: number; name: string; code: string | null }
 interface Mine { id: number; name: string; baseId: number; base: Base }
@@ -177,7 +178,7 @@ export function WorkExecutionPage() {
         <TextField label="Код заказчика" value={customerCode} onChange={(event) => setCustomerCode(event.target.value)} />
         <button className="btn" disabled={!customerName.trim() || createCustomer.pending}>Добавить заказчика</button>
       </form>
-      {Boolean(createCustomer.error) && <Alert>{errorMessage(createCustomer.error)}</Alert>}
+      <ActionError error={createCustomer.error} />
       <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 12 }} onSubmit={(event) => {
         event.preventDefault();
         createWorkType.run();
@@ -186,7 +187,7 @@ export function WorkExecutionPage() {
         <TextField label="Код" value={workTypeCode} onChange={(event) => setWorkTypeCode(event.target.value)} />
         <button className="btn" disabled={!workTypeName.trim() || !workTypeCode.trim() || createWorkType.pending}>Добавить вид работ</button>
       </form>
-      {Boolean(createWorkType.error) && <Alert>{errorMessage(createWorkType.error)}</Alert>}
+      <ActionError error={createWorkType.error} />
     </section>}
 
     {canManageWork && isAdmin && <section className="panel pad" style={{ marginBottom: 16 }}>
@@ -217,7 +218,7 @@ export function WorkExecutionPage() {
         <TextField label="Действует по" type="date" value={contractEnd} onChange={(event) => setContractEnd(event.target.value)} />
         <button className="btn btn-primary" disabled={!baseId || !customerId || !contractNumber.trim() || !contractEnd || !activeContractStatus || createContract.pending}>Создать договор</button>
       </form>
-      {Boolean(createContract.error) && <Alert>{errorMessage(createContract.error)}</Alert>}
+      <ActionError error={createContract.error} />
       {contractsQuery.data && <>
         <div className="row wrap" style={{ alignItems: 'flex-end', marginTop: 16 }}>
           <SelectField label="Договор" value={contractId} onChange={(event) => {
@@ -287,7 +288,7 @@ export function WorkExecutionPage() {
         }}>Применить к {basisWellIds.length || 'выбранным'} скважинам</button>
       </div>}
       {wells.length > 0 && <div className="table-wrap" style={{ marginTop: 16 }}><table className="table"><thead><tr><th>Скважина</th><th>Действующее договорное основание</th></tr></thead><tbody>{wells.map((well) => <tr key={well.id}><td>{well.name}</td><td>{well.contractBases?.map((basis) => basis.contract?.number ?? basis.addendum?.number).join(', ') || 'Не привязано'}</td></tr>)}</tbody></table></div>}
-      {Boolean(assignBasis.error) && <Alert>{errorMessage(assignBasis.error)}</Alert>}
+      <ActionError error={assignBasis.error} />
     </section>
 
     <section className="panel" style={{ padding: 18 }}>
@@ -306,7 +307,7 @@ export function WorkExecutionPage() {
         </SelectField>}
         <button className="btn" disabled={!contractId || !workTypeId || setPermission.pending}>Сохранить разрешение</button>
       </form>
-      {Boolean(setPermission.error) && <Alert>{errorMessage(setPermission.error)}</Alert>}
+      <ActionError error={setPermission.error} />
 
       <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 16 }} onSubmit={(event) => {
         event.preventDefault();
@@ -324,7 +325,7 @@ export function WorkExecutionPage() {
         <TextField label="Описание" value={description} onChange={(event) => setDescription(event.target.value)} />
         <button className="btn btn-primary" disabled={!wellId || !workTypeId || !(workStatusId || defaultWorkStatus?.id) || recordWork.pending}>Зарегистрировать работу</button>
       </form>
-      {Boolean(recordWork.error) && <Alert>{errorMessage(recordWork.error)}</Alert>}
+      <ActionError error={recordWork.error} />
     </section>
     </>}
   </>;
@@ -364,6 +365,6 @@ function AddendumCreator({
     <button type="button" className="btn" disabled={!number.trim() || !endsAt || !description.trim() || create.pending} onClick={() => create.run()}>
       Добавить допсоглашение
     </button>
-    {Boolean(create.error) && <Alert>{errorMessage(create.error)}</Alert>}
+    <ActionError error={create.error} />
   </div>;
 }

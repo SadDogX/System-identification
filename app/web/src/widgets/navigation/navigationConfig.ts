@@ -16,6 +16,8 @@ export interface NavSubgroup {
 export interface NavGroup {
   label: string;
   icon: IconName;
+  /** Прямая корневая ссылка без раскрывающейся группы. */
+  to?: string;
   items?: NavItem[];
   subgroups?: NavSubgroup[];
 }
@@ -23,6 +25,7 @@ export interface NavGroup {
 const USER_ITEMS: NavItem[] = [
   { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
   { to: '/user/work-execution', label: 'Договоры и работы', icon: 'doneAll' },
+  { to: '/user/work-assignments', label: 'Мои выезды', icon: 'work' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
 ];
 
@@ -63,11 +66,7 @@ const SCHEDULE_USER_ITEMS: NavItem[] = [
 ];
 
 const ADMIN_NAV_GROUPS: NavGroup[] = [
-  {
-    label: 'Обзор',
-    icon: 'dashboard',
-    items: [{ to: '/admin/dashboard', label: 'Панель управления', icon: 'dashboard' }],
-  },
+  { label: 'Панель управления', icon: 'dashboard', to: '/admin/dashboard' },
   {
     label: 'Сотрудники',
     icon: 'people',
@@ -77,17 +76,28 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
       { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_ADMIN_ITEMS },
     ],
   },
-  { label: 'Оборудование', icon: 'grid', items: [{ to: '/admin/equipment', label: 'Оборудование', icon: 'grid' }] },
   {
     label: 'Организация БПО',
     icon: 'people',
-    items: [
-      { to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
-      { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' },
-      { to: '/admin/org/assignments', label: 'Назначения', icon: 'doneAll' },
-      { to: '/admin/org/transfers', label: 'Переводы', icon: 'history' },
-      { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
-      { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
+    subgroups: [
+      {
+        label: 'Работа с персоналом',
+        icon: 'people',
+        items: [
+          { to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
+          { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' },
+          { to: '/admin/org/assignments', label: 'Назначения и переводы', icon: 'doneAll' },
+        ],
+      },
+      {
+        label: 'Выполнение работ',
+        icon: 'work',
+        items: [
+          { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
+          { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
+          { to: '/admin/work-assignments', label: 'Выезды на работы', icon: 'work' },
+        ],
+      },
     ],
   },
   {
@@ -104,11 +114,7 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
 ];
 
 const USER_NAV_GROUPS: NavGroup[] = [
-  {
-    label: 'Обзор',
-    icon: 'dashboard',
-    items: [{ to: '/user/dashboard', label: 'Панель управления', icon: 'dashboard' }],
-  },
+  { label: 'Панель управления', icon: 'dashboard', to: '/user/dashboard' },
   {
     label: 'Сотрудники',
     icon: 'people',
@@ -159,6 +165,7 @@ export function isNavItemActive(path: string, to: string) {
 }
 
 export function groupHasActivePath(group: NavGroup, path: string) {
+  if (group.to) return isNavItemActive(path, group.to);
   return [...(group.items ?? []), ...(group.subgroups ?? []).flatMap((subgroup) => subgroup.items)].some(
     (item) => isNavItemActive(path, item.to),
   );

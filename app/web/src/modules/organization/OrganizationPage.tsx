@@ -3,6 +3,7 @@ import { api, errorMessage } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, Icon, PageHeader, SelectField, TextField } from '@app/shared/ui';
+import { ActionError } from '../../widgets/feedback/ActionError';
 
 interface Base { id: number; name: string; code: string | null }
 interface Position { id: number; name: string }
@@ -44,6 +45,7 @@ type OrganizationView = 'overview' | 'structure' | 'assignments' | 'transfers';
 export function OrganizationPage({ view = 'overview' }: { view?: OrganizationView }) {
   const user = useCurrentUser();
   const isAdmin = user.role === 'ADMIN';
+  const [assignmentTab, setAssignmentTab] = useState<'assignment' | 'transfer'>(view === 'transfers' ? 'transfer' : 'assignment');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedBaseId, setSelectedBaseId] = useState('');
   const [selectedRole, setSelectedRole] = useState('EMPLOYEE');
@@ -51,13 +53,12 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
   const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
   const [startsAt, setStartsAt] = useState(today());
   const [reason, setReason] = useState('');
-  const [baseName, setBaseName] = useState('');
-  const [baseCode, setBaseCode] = useState('');
   const [mineName, setMineName] = useState('');
   const [mineCode, setMineCode] = useState('');
   const [wellMineId, setWellMineId] = useState('');
   const [wellName, setWellName] = useState('');
   const [wellCode, setWellCode] = useState('');
+  const [wellClusterNumber, setWellClusterNumber] = useState('');
   const [coordinatorByMine, setCoordinatorByMine] = useState<Record<number, string>>({});
   const [transferDateByMine, setTransferDateByMine] = useState<Record<number, string>>({});
   const [errorMessageText, setErrorMessageText] = useState('');
@@ -85,19 +86,13 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
   const coordinators = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === 'COORDINATOR'));
   const showStructure = view === 'overview' || view === 'structure';
   const showAssignmentForm = view === 'overview' || view === 'assignments' || view === 'transfers';
+  const isTransfer = view === 'transfers' || assignmentTab === 'transfer';
 
   const refresh = () => {
     invalidate('org:');
     invalidate('admin:');
   };
 
-  const createBase = useAction(() => api.post('/admin/org/bases', { name: baseName, code: baseCode || null }), {
-    onSuccess: () => {
-      setBaseName('');
-      setBaseCode('');
-      refresh();
-    },
-  });
   const createMine = useAction((baseId: number) => api.post(`/org/bases/${baseId}/mines`, { name: mineName, code: mineCode || null }), {
     onSuccess: () => {
       setMineName('');
@@ -105,10 +100,15 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
       refresh();
     },
   });
-  const createWell = useAction((mineId: number) => api.post(`/org/mines/${mineId}/wells`, { name: wellName, code: wellCode || null }), {
+  const createWell = useAction((mineId: number) => api.post(`/org/mines/${mineId}/wells`, {
+    name: wellName,
+    code: wellCode || null,
+    clusterNumber: wellClusterNumber || null,
+  }), {
     onSuccess: () => {
       setWellName('');
       setWellCode('');
+      setWellClusterNumber('');
       refresh();
     },
   });
@@ -154,12 +154,10 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
   return (
     <>
       <PageHeader
-        title={view === 'assignments' ? 'Назначения сотрудников' : view === 'transfers' ? 'Переводы сотрудников' : isAdmin ? 'Организационная структура' : 'Моя база и команда'}
-        subtitle={view === 'assignments'
-          ? 'Назначение сотрудников на базу, должность и руководителя'
-          : view === 'transfers'
-            ? 'Перевод сотрудника с фиксацией прежнего и нового назначения'
-            : 'Базы, месторождения, сотрудники и назначения с сохранением истории переводов'}
+        title={view === 'assignments' || view === 'transfers' ? 'Назначения и переводы' : isAdmin ? 'Организационная структура' : 'Моя база и команда'}
+        subtitle={view === 'assignments' || view === 'transfers'
+          ? 'Назначайте сотрудников и оформляйте переводы с сохранением истории'
+          : 'Базы и месторождения с назначениями и историей переводов'}
       />
       {(basesQuery.error || employeesQuery.error || positionsQuery.error || rolesQuery.error || minesQuery.error) && (
         <Alert>{basesQuery.error ?? employeesQuery.error ?? positionsQuery.error ?? rolesQuery.error ?? minesQuery.error}</Alert>
@@ -168,61 +166,61 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
 
       {showStructure && isAdmin && (
         <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
-          <h2 className="section-title">Базы</h2>
+          <h2 className="section-title">Базы из справочника</h2>
           <div className="row wrap">
             {bases.map((base) => <span className="chip" key={base.id}>{base.name} · {base.code}</span>)}
           </div>
-          <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 16 }} onSubmit={(event) => {
-            event.preventDefault();
-            createBase.run();
-          }}>
-            <TextField label="Название базы" value={baseName} onChange={(event) => setBaseName(event.target.value)} />
-            <TextField label="Код" value={baseCode} onChange={(event) => setBaseCode(event.target.value)} />
-            <button className="btn btn-primary" disabled={createBase.pending || !baseName.trim()}><Icon name="add" small /> Добавить базу</button>
-          </form>
-          {Boolean(createBase.error) && <Alert>{errorMessage(createBase.error)}</Alert>}
         </section>
       )}
 
-      <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
-        <h2 className="section-title">{isAdmin ? 'Карточки сотрудников и назначения' : 'Сотрудники моей зоны ответственности'}</h2>
-        {isAdmin && (
-          <p className="muted">`root` назначается менеджеру базы, `editor` — координатору. Назначение сотрудника не меняет его старые кадровые записи.</p>
-        )}
-        <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th>Сотрудник</th><th>Системная роль</th><th>Должность</th><th>База / руководитель</th><th>Подразделение</th><th>Месторождения координатора</th></tr></thead>
-            <tbody>
-              {employees.map((employee) => {
-                const assignment = employee.assignments[0];
-                return (
-                  <tr key={employee.id} className={employee.user.isActive ? '' : 'dimmed'}>
-                    <td>{employee.user.fullName}<div className="muted small">{employee.user.login}</div></td>
-                    <td>{employee.user.systemRoles.map((grant) => grant.systemRole.name).join(', ') || 'Сотрудник'}</td>
-                    <td>{assignment?.position?.name ?? 'Не назначена'}</td>
-                    <td>{assignment?.base?.name ?? 'Не назначена'}{assignment?.supervisor?.user.fullName && <div className="muted small">Руководитель: {assignment.supervisor.user.fullName}</div>}</td>
-                    <td>{assignment?.track === 'UNASSIGNED' ? 'Не назначено' : assignment?.track === 'R_AND_M' ? 'R&M' : 'TRS'}</td>
-                    <td>{employee.mineAssignments?.map((item) => item.mine.name).join(', ') || '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {employees.length === 0 && <div className="empty">Нет сотрудников в доступной области.</div>}
-        </div>
+      {view === 'overview' && (
+        <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
+          <h2 className="section-title">{isAdmin ? 'Карточки сотрудников и назначения' : 'Сотрудники моей зоны ответственности'}</h2>
+          {isAdmin && (
+            <p className="muted">`root` назначается менеджеру базы, `editor` — координатору. Назначение сотрудника не меняет его старые кадровые записи.</p>
+          )}
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Сотрудник</th><th>Системная роль</th><th>Должность</th><th>База / руководитель</th><th>Подразделение</th><th>Месторождения координатора</th></tr></thead>
+              <tbody>
+                {employees.map((employee) => {
+                  const assignment = employee.assignments[0];
+                  return (
+                    <tr key={employee.id} className={employee.user.isActive ? '' : 'dimmed'}>
+                      <td>{employee.user.fullName}<div className="muted small">{employee.user.login}</div></td>
+                      <td>{employee.user.systemRoles.map((grant) => grant.systemRole.name).join(', ') || 'Сотрудник'}</td>
+                      <td>{assignment?.position?.name ?? 'Не назначена'}</td>
+                      <td>{assignment?.base?.name ?? 'Не назначена'}{assignment?.supervisor?.user.fullName && <div className="muted small">Руководитель: {assignment.supervisor.user.fullName}</div>}</td>
+                      <td>{assignment?.track === 'UNASSIGNED' ? 'Не назначено' : assignment?.track === 'R_AND_M' ? 'R&M' : 'TRS'}</td>
+                      <td>{employee.mineAssignments?.map((item) => item.mine.name).join(', ') || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {employees.length === 0 && <div className="empty">Нет сотрудников в доступной области.</div>}
+          </div>
+        </section>
+      )}
 
-        {showAssignmentForm && (isAdmin || isManager) && (
+      {showAssignmentForm && (isAdmin || isManager) && (
           <form className="panel" style={{ padding: 16, marginTop: 18 }} onSubmit={async (event) => {
             event.preventDefault();
             setErrorMessageText('');
             await assignEmployee.run();
           }}>
             <h3 className="section-title">
-              {view === 'transfers' ? 'Оформить перевод сотрудника' : isAdmin ? 'Назначить сотрудника' : 'Перевести сотрудника внутри своей базы'}
+                {isTransfer ? 'Оформить перевод сотрудника' : isAdmin ? 'Назначить сотрудника' : 'Перевести сотрудника внутри своей базы'}
             </h3>
-            {view === 'transfers' && <p className="muted">Укажите новые условия назначения. Текущее назначение будет закрыто и сохранено в истории.</p>}
+              {view === 'assignments' && (
+                <div className="tabs" role="tablist" aria-label="Действие с назначением">
+                  <button type="button" role="tab" aria-selected={!isTransfer} className={`tab${!isTransfer ? ' active' : ''}`} onClick={() => setAssignmentTab('assignment')}>Назначение</button>
+                  <button type="button" role="tab" aria-selected={isTransfer} className={`tab${isTransfer ? ' active' : ''}`} onClick={() => setAssignmentTab('transfer')}>Перевод</button>
+                </div>
+              )}
+              {isTransfer && <p className="muted">Укажите новые условия назначения. Текущее назначение будет закрыто и сохранено в истории.</p>}
             <div className="row wrap">
-              <SelectField label={view === 'transfers' ? 'Сотрудник для перевода' : 'Сотрудник'} value={selectedEmployeeId} onChange={(event) => {
+              <SelectField label={isTransfer ? 'Сотрудник для перевода' : 'Сотрудник'} value={selectedEmployeeId} onChange={(event) => {
                 setSelectedEmployeeId(event.target.value);
                 const employee = employees.find((item) => String(item.id) === event.target.value);
                 const assignment = employee?.assignments[0];
@@ -253,7 +251,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                 {supervisors.map((employee) => <option key={employee.id} value={employee.id}>{employee.user.fullName}</option>)}
               </SelectField>}
               <TextField label="Дата начала" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
-              <TextField label={view === 'transfers' ? 'Причина перевода' : 'Причина назначения или перевода'} value={reason} onChange={(event) => setReason(event.target.value)} />
+              <TextField label={isTransfer ? 'Причина перевода' : 'Причина назначения или перевода'} value={reason} onChange={(event) => setReason(event.target.value)} />
               <button
                 className="btn btn-primary"
                 disabled={
@@ -264,13 +262,12 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                   (!!supervisorRole && !selectedSupervisorId)
                 }
               >
-                <Icon name="doneAll" small /> {view === 'transfers' ? 'Оформить перевод' : 'Сохранить назначение'}
+                <Icon name="doneAll" small /> {isTransfer ? 'Оформить перевод' : 'Сохранить назначение'}
               </button>
             </div>
-            {Boolean(assignEmployee.error) && <Alert>{errorMessage(assignEmployee.error)}</Alert>}
+            <ActionError error={assignEmployee.error} />
           </form>
-        )}
-      </section>
+      )}
 
       {showStructure && <section className="panel" style={{ padding: 18 }}>
         <h2 className="section-title">Месторождения</h2>
@@ -316,7 +313,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
             <button className="btn btn-primary" disabled={createMine.pending || !mineName.trim() || (isAdmin && !selectedBaseId)}><Icon name="add" small /> Добавить</button>
           </form>
         )}
-        {Boolean(createMine.error) && <Alert>{errorMessage(createMine.error)}</Alert>}
+        <ActionError error={createMine.error} />
         {(isAdmin || isManager) && <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 18 }} onSubmit={(event) => {
           event.preventDefault();
           if (wellMineId) createWell.run(Number(wellMineId));
@@ -327,9 +324,10 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
           </SelectField>
           <TextField label="Новая скважина" value={wellName} onChange={(event) => setWellName(event.target.value)} />
           <TextField label="Код" value={wellCode} onChange={(event) => setWellCode(event.target.value)} />
+          <TextField label="Номер куста" value={wellClusterNumber} onChange={(event) => setWellClusterNumber(event.target.value)} />
           <button className="btn btn-primary" disabled={createWell.pending || !wellMineId || !wellName.trim()}><Icon name="add" small /> Добавить скважину</button>
         </form>}
-        {Boolean(createWell.error) && <Alert>{errorMessage(createWell.error)}</Alert>}
+        <ActionError error={createWell.error} />
       </section>}
     </>
   );

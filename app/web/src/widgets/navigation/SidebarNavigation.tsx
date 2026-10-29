@@ -10,10 +10,12 @@ interface SidebarNavigationProps {
   onCloseMenu: () => void;
 }
 
-const DEFAULT_EXPANDED_GROUPS: Record<string, boolean> = { Обзор: true, Сотрудники: true };
+const DEFAULT_EXPANDED_GROUPS: Record<string, boolean> = { Сотрудники: true };
 const DEFAULT_EXPANDED_SUBGROUPS: Record<string, boolean> = {
   Удостоверения: true,
   'Работа и удостоверения': true,
+  'Работа с персоналом': true,
+  'Выполнение работ': true,
   WPTS: true,
 };
 
@@ -50,18 +52,22 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
           <Icon name="badge" />
           Учёт удостоверений
         </div>
-        <div className="sidebar-settings">
-          <Link
-            to="/settings"
-            className={`nav-link${isNavItemActive(path, '/settings') ? ' active' : ''}`}
-            onClick={() => onCloseMenu()}
-          >
-            <Icon name="settings" />
-            Настройки
-          </Link>
-        </div>
         <nav className="nav">
           {navGroups.map((group) => {
+            if (group.to) {
+              return (
+                <Link
+                  key={group.to}
+                  to={group.to}
+                  className={`nav-link${isNavItemActive(path, group.to) ? ' active' : ''}`}
+                  onClick={() => onCloseMenu()}
+                >
+                  <Icon name={group.icon} />
+                  {group.label}
+                </Link>
+              );
+            }
+
             const expanded = expandedGroups[group.label] ?? false;
             const active = groupHasActivePath(group, path);
 
@@ -79,17 +85,6 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
                 </button>
                 {expanded && (
                   <div className="nav-group-items">
-                    {(group.items ?? []).map((item) => (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        className={`nav-link${isNavItemActive(path, item.to) ? ' active' : ''}`}
-                        onClick={() => onCloseMenu()}
-                      >
-                        <Icon name={item.icon} />
-                        {item.label}
-                      </Link>
-                    ))}
                     {(group.subgroups ?? []).map((subgroup) => {
                       const subgroupExpanded = expandedSubgroups[subgroup.label] ?? false;
                       const subgroupActive = subgroupHasActivePath(subgroup, path);
@@ -124,12 +119,33 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
                         </div>
                       );
                     })}
+                    {(group.items ?? []).map((item) => (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        className={`nav-link${isNavItemActive(path, item.to) ? ' active' : ''}`}
+                        onClick={() => onCloseMenu()}
+                      >
+                        <Icon name={item.icon} />
+                        {item.label}
+                      </Link>
+                    ))}
                   </div>
                 )}
               </div>
             );
           })}
         </nav>
+        <div className="sidebar-settings">
+          <Link
+            to="/settings"
+            className={`nav-link${isNavItemActive(path, '/settings') ? ' active' : ''}`}
+            onClick={() => onCloseMenu()}
+          >
+            <Icon name="settings" />
+            Настройки
+          </Link>
+        </div>
       </aside>
       <div className={`scrim${menuOpen ? ' open' : ''}`} onClick={() => onCloseMenu()} />
     </>

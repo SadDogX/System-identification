@@ -48,6 +48,7 @@ model User {
   createdContracts                  Contract[]                  @relation("ContractCreator")
   createdAddenda                    ContractAddendum[]          @relation("AddendumCreator")
   createdWork                       WorkExecution[]             @relation("WorkCreator")
+  createdWorkAssignments            WorkAssignment[]            @relation("WorkAssignmentCreator")
 
   @@index([role, isDeleted])
   @@index([positionId], map: "User_positionId_fkey")
@@ -78,23 +79,25 @@ model Employee {
   supervised      EmployeeAssignment[]        @relation("AssignmentSupervisor")
   mineAssignments MineCoordinatorAssignment[]
   responsibleFor  WorkExecutionResponsible[]
+  plannedWork     WorkAssignmentResponsible[]
   changes         OrganizationChange[]
 
   @@index([userId])
 }
 
 model Base {
-  id          Int                  @id @default(autoincrement())
-  name        String               @unique @db.VarChar(150)
-  code        String?              @unique @db.VarChar(50)
-  isActive    Boolean              @default(true)
-  createdById Int?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  createdBy   User?                @relation("BaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  assignments EmployeeAssignment[]
-  mines       Mine[]
-  contracts   Contract[]
+  id              Int                  @id @default(autoincrement())
+  name            String               @unique @db.VarChar(150)
+  code            String?              @unique @db.VarChar(50)
+  isActive        Boolean              @default(true)
+  createdById     Int?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  createdBy       User?                @relation("BaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  assignments     EmployeeAssignment[]
+  mines           Mine[]
+  contracts       Contract[]
+  workAssignments WorkAssignment[]
 
   @@index([isActive, name])
 }
@@ -209,6 +212,7 @@ model Mine {
   createdBy              User?                       @relation("MineCreator", fields: [createdById], references: [id], onDelete: SetNull)
   coordinatorAssignments MineCoordinatorAssignment[]
   wells                  Well[]
+  workAssignments        WorkAssignment[]
 
   @@unique([baseId, name])
   @@unique([baseId, code])
@@ -235,18 +239,20 @@ model MineCoordinatorAssignment {
 }
 
 model Well {
-  id            Int                 @id @default(autoincrement())
-  mineId        Int
-  name          String              @db.VarChar(150)
-  code          String?             @db.VarChar(50)
-  isActive      Boolean             @default(true)
-  createdById   Int?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  mine          Mine                @relation(fields: [mineId], references: [id], onDelete: Restrict)
-  createdBy     User?               @relation("WellCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  contractBases WellContractBasis[]
-  executions    WorkExecution[]
+  id              Int                 @id @default(autoincrement())
+  mineId          Int
+  name            String              @db.VarChar(150)
+  code            String?             @db.VarChar(50)
+  clusterNumber   String?             @db.VarChar(50)
+  isActive        Boolean             @default(true)
+  createdById     Int?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  mine            Mine                @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  createdBy       User?               @relation("WellCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  contractBases   WellContractBasis[]
+  executions      WorkExecution[]
+  workAssignments WorkAssignment[]
 
   @@unique([mineId, name])
   @@unique([mineId, code])
@@ -383,6 +389,7 @@ model WorkType {
   contractPermissions        ContractWorkPermission[]
   addendumPermissions        AddendumWorkPermission[]
   executions                 WorkExecution[]
+  workAssignments            WorkAssignment[]
 }
 
 model ContractWorkPermission {
@@ -400,14 +407,15 @@ model ContractWorkPermission {
 }
 
 model WorkStatus {
-  id         Int             @id @default(autoincrement())
-  code       String          @unique @db.VarChar(50)
-  name       String          @db.VarChar(100)
-  isActive   Boolean         @default(true)
-  sortOrder  Int             @default(0)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  executions WorkExecution[]
+  id                 Int              @id @default(autoincrement())
+  code               String           @unique @db.VarChar(50)
+  name               String           @db.VarChar(100)
+  isActive           Boolean          @default(true)
+  sortOrder          Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  executions         WorkExecution[]
+  plannedAssignments WorkAssignment[]
 }
 
 model WorkExecution {
@@ -446,6 +454,53 @@ model WorkExecutionResponsible {
 
   @@unique([workId, employeeId])
   @@index([employeeId, workId])
+}
+
+enum WorkLocationType {
+  BASE
+  CLUSTER
+  WELL
+}
+
+model WorkAssignment {
+  id            Int                         @id @default(autoincrement())
+  baseId        Int
+  mineId        Int?
+  wellId        Int?
+  locationType  WorkLocationType
+  clusterNumber String?                     @db.VarChar(50)
+  workTypeId    Int
+  statusId      Int
+  startsAt      DateTime                    @db.Date
+  endsAt        DateTime                    @db.Date
+  description   String?                     @db.Text
+  createdById   Int?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  base          Base                        @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  mine          Mine?                       @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  well          Well?                       @relation(fields: [wellId], references: [id], onDelete: Restrict)
+  workType      WorkType                    @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+  status        WorkStatus                  @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdBy     User?                       @relation("WorkAssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  responsible   WorkAssignmentResponsible[]
+
+  @@index([baseId, startsAt, endsAt])
+  @@index([mineId, startsAt, endsAt])
+  @@index([wellId, startsAt, endsAt])
+  @@index([workTypeId, startsAt])
+  @@index([statusId, startsAt])
+}
+
+model WorkAssignmentResponsible {
+  id               Int            @id @default(autoincrement())
+  workAssignmentId Int
+  employeeId       Int
+  workAssignment   WorkAssignment @relation(fields: [workAssignmentId], references: [id], onDelete: Restrict)
+  employee         Employee       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([workAssignmentId, employeeId])
+  @@index([employeeId, workAssignmentId])
 }
 
 /// Справочник удостоверений: название и срок действия
