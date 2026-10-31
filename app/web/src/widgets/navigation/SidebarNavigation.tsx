@@ -123,7 +123,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
                       <Link
                         key={item.to}
                         to={item.to}
-                        className={`nav-link${isNavItemActive(path, item.to) ? ' active' : ''}`}
+                        className={`nav-subgroup-title${isNavItemActive(path, item.to) ? ' active' : ''}`}
                         onClick={() => onCloseMenu()}
                       >
                         <Icon name={item.icon} />

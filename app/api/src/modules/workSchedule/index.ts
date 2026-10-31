@@ -53,8 +53,12 @@ admin.post('/shift-partners/generate', validate(shiftPartnersSchema), h(async (r
     rows.push({ userId: input.userAId, date: new Date(date), status: statusFor(true) }, { userId: input.userBId, date: new Date(date), status: statusFor(false) });
   }
   await prisma.$transaction([
-    prisma.workScheduleEntry.deleteMany({ where: { userId: { in: [input.userAId, input.userBId] }, date: { gte: start, lt: end } } }),
-    ...rows.map((row) => prisma.workScheduleEntry.create({ data: row })),
+    prisma.workScheduleEntry.deleteMany({ 
+      where: { 
+        userId: { 
+          in: [input.userAId, input.userBId] }, 
+      date: { gte: start, lt: end } } }),
+    prisma.workScheduleEntry.createMany({ data: rows }),
   ]);
   res.json({ year: input.year, generated: rows.length, users: [input.userAId, input.userBId] });
 }));

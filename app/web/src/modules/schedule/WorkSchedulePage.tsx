@@ -44,6 +44,13 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
   );
 
   useEffect(() => {
+  if (!admin || selectedUser || !users.data?.length) return;
+
+  setSelectedUser(String(users.data[0].id));
+}, [admin, selectedUser, users.data]);
+
+
+  useEffect(() => {
     const stop = () => setDragging(false);
     window.addEventListener('pointerup', stop);
     return () => window.removeEventListener('pointerup', stop);
