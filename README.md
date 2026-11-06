@@ -61,7 +61,7 @@ shared/                       общее для нескольких модул�
 
 ```bash
 npm install
-npm run db:up                              # MySQL 8 в Docker, порт 3308
+npm run db:up                              # MySQL 8 в Docker, порт 53308
 cp app/api/.env.example app/api/.env       # если .env ещё нет
 npm run db:migrate                         # создать таблицы
 npm run db:seed                            # первый администратор + справочник

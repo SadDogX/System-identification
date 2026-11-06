@@ -5,6 +5,7 @@ import type { Tx } from '../../core/db.ts';
 import { prisma } from '../../core/db.ts';
 import { badRequest, conflict, forbidden, notFound } from '../../core/errors.ts';
 import { audit, diffOf } from '../../core/audit.ts';
+import { positionSystemRole, syncPositionSystemRole } from './positionRoles.ts';
 import type {
   AccountRolesInput,
   AddendumInput,
@@ -32,8 +33,8 @@ import type {
 
 const ORG_ROLES = [
   ['ADMIN', 'Администратор'],
-  ['MANAGER', 'Менеджер (root)'],
-  ['COORDINATOR', 'Координатор (editor)'],
+  ['MANAGER', 'Менеджер'],
+  ['COORDINATOR', 'Координатор'],
   ['SENIOR_MECHANIC', 'Старший механик'],
   ['MECHANIC', 'Механик'],
   ['SHOP_FOREMAN', 'Мастер цеха'],
@@ -175,6 +176,10 @@ export async function ensureEmployeeAndLegacyRole(tx: Tx, user: User, actorId?: 
       },
     });
   }
+  if (user.role !== 'ADMIN') {
+    const position = user.positionId ? await tx.position.findUnique({ where: { id: user.positionId }, select: { name: true } }) : null;
+    await syncPositionSystemRole(tx, user.id, null, position?.name, actorId ?? user.id);
+  }
   return employee;
 }
 
@@ -210,6 +215,9 @@ export async function updateEmployeePosition(tx: Tx, user: User, positionId: num
   const employee = await ensureEmployeeAndLegacyRole(tx, user, actorId);
   const existing = await currentAssignment(tx, employee.id);
   if (!existing) throw conflict('У сотрудника нет действующего назначения');
+  const oldPositionName = existing.positionId ? (await tx.position.findUnique({ where: { id: existing.positionId }, select: { name: true } }))?.name : null;
+  const newPositionName = positionId ? (await tx.position.findUnique({ where: { id: positionId }, select: { name: true } }))?.name : null;
+  await syncPositionSystemRole(tx, user.id, oldPositionName, newPositionName, actorId);
   if (existing.positionId === positionId) return;
 
   const operationId = randomUUID();
@@ -259,7 +267,9 @@ async function roleCodes(tx: Database, userId: number) {
     where: { userId, revokedAt: null, systemRole: { isActive: true } },
     select: { systemRole: { select: { code: true } } },
   });
-  return grants.map((grant) => grant.systemRole.code);
+  const codes = grants.map((grant) => grant.systemRole.code);
+  if (codes.includes('MANAGER') && !codes.includes('COORDINATOR')) codes.push('COORDINATOR');
+  return codes;
 }
 
 async function hasSystemRole(tx: Tx, userId: number, code: string) {
@@ -885,18 +895,20 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
     if (roles.includes('ADMIN') && target.role !== 'ADMIN') {
       throw badRequest('Роль администратора назначается только штатной процедурой управления администраторами');
     }
-    const roleRows = await tx.systemRole.findMany({ where: { code: { in: roles }, isActive: true } });
-    if (roleRows.length !== roles.length) throw badRequest('Одна или несколько системных ролей неактивны');
-    if (roles.includes('SENIOR_MECHANIC') && await tx.userSystemRole.findUnique({ where: { globalRoleKey: 'SENIOR_MECHANIC' } })) {
+    const current = await tx.userSystemRole.findMany({ where: { userId, revokedAt: null }, include: { systemRole: { select: { code: true } } } });
+    const position = target.positionId ? await tx.position.findUnique({ where: { id: target.positionId }, select: { name: true } }) : null;
+    const impliedRole = positionSystemRole(position?.name);
+    const effectiveRoles: string[] = impliedRole
+      ? [...roles.filter((code) => code !== 'MANAGER' && code !== 'COORDINATOR'), impliedRole]
+      : roles;
+    const roleRows = await tx.systemRole.findMany({ where: { code: { in: effectiveRoles }, isActive: true } });
+    if (roleRows.length !== effectiveRoles.length) throw badRequest('Одна или несколько системных ролей неактивны');
+    if (effectiveRoles.includes('SENIOR_MECHANIC') && await tx.userSystemRole.findUnique({ where: { globalRoleKey: 'SENIOR_MECHANIC' } })) {
       const existing = await tx.userSystemRole.findUnique({ where: { currentUserRoleKey: `${userId}:${roleRows.find((role) => role.code === 'SENIOR_MECHANIC')!.id}` } });
       if (!existing) throw conflict('В компании уже назначен старший механик');
     }
-    const current = await tx.userSystemRole.findMany({
-      where: { userId, revokedAt: null },
-      include: { systemRole: { select: { code: true } } },
-    });
     const currentCodes = current.map((grant) => grant.systemRole.code);
-    const nextCodes = new Set<string>(roles);
+    const nextCodes = new Set<string>(effectiveRoles);
     const removed = current.filter((grant) => !nextCodes.has(grant.systemRole.code));
     const currentCodeSet = new Set<string>(currentCodes);
     const added = roleRows.filter((role) => !currentCodeSet.has(role.code));
@@ -932,7 +944,7 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
           actorId: actor.id,
           action: 'system_roles.update',
           previous: currentCodes,
-          next: roles,
+          next: effectiveRoles,
           operationId: randomUUID(),
         },
       });
@@ -943,9 +955,9 @@ export async function setAccountRoles(actor: User, userId: number, input: Accoun
       entityType: 'User',
       entityId: userId,
       targetUserId: userId,
-      diff: { roles: { from: currentCodes, to: roles } },
+      diff: { roles: { from: currentCodes, to: effectiveRoles } },
     });
-    return { userId, roles: [...roles].sort() };
+    return { userId, roles: [...effectiveRoles].sort() };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
@@ -1140,19 +1152,24 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
       const actorAssignment = actorEmployee ? await currentAssignment(tx, actorEmployee.id) : null;
       if (!administrator && (!roles.includes('MANAGER') || !actorAssignment?.baseId)) throw forbidden();
 
-      const employeeRoles = await roleCodes(tx, employee.user.id);
+      const existing = await currentAssignment(tx, employeeId);
+      const oldPosition = existing?.positionId ? await tx.position.findUnique({ where: { id: existing.positionId }, select: { name: true } }) : null;
+      const effectivePositionId = input.positionId === undefined ? existing?.positionId ?? null : input.positionId;
+      const newPosition = effectivePositionId ? await tx.position.findUnique({ where: { id: effectivePositionId }, select: { name: true } }) : null;
+      await syncPositionSystemRole(tx, employee.user.id, oldPosition?.name, newPosition?.name, actor.id);
+      const currentEmployeeRoles = await roleCodes(tx, employee.user.id);
       const expectedRole =
         input.track === 'TRS'
-          ? employeeRoles.includes('MANAGER')
+          ? currentEmployeeRoles.includes('MANAGER')
             ? 'MANAGER'
-            : employeeRoles.includes('COORDINATOR')
+            : currentEmployeeRoles.includes('COORDINATOR')
               ? 'COORDINATOR'
               : 'EMPLOYEE'
-          : employeeRoles.includes('SENIOR_MECHANIC')
+          : currentEmployeeRoles.includes('SENIOR_MECHANIC')
             ? 'SENIOR_MECHANIC'
-            : employeeRoles.includes('MECHANIC')
+            : currentEmployeeRoles.includes('MECHANIC')
               ? 'MECHANIC'
-              : employeeRoles.includes('SHOP_FOREMAN')
+              : currentEmployeeRoles.includes('SHOP_FOREMAN')
                 ? 'SHOP_FOREMAN'
                 : 'SHOP_EMPLOYEE';
       if (
@@ -1163,6 +1180,7 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
       }
 
       const isSeniorMechanic = expectedRole === 'SENIOR_MECHANIC';
+      const isManager = expectedRole === 'MANAGER';
       if (!input.baseId && !isSeniorMechanic) throw badRequest('Для назначения требуется база');
       if (input.startsAt > today()) throw badRequest('Будущие переводы пока не поддерживаются');
       if (!administrator && input.baseId !== actorAssignment?.baseId) throw forbidden();
@@ -1195,7 +1213,7 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
           supervisor.user.isDeleted ||
           !supervisorAssignment ||
           supervisorAssignment.track !== input.track ||
-          !supervisorRoles.includes(requiredRole)
+          (!supervisorRoles.includes(requiredRole) && !(expectedRole === 'COORDINATOR' && supervisorRoles.includes('MANAGER')))
         ) {
           throw badRequest('Непосредственный руководитель не соответствует оргструктуре');
         }
@@ -1222,7 +1240,6 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
         supervisorUserId = supervisor.user.id;
       }
 
-      const existing = await currentAssignment(tx, employeeId);
       const existingStart = existing?.startsAt.toISOString().slice(0, 10);
       const replacingUnassignedPlaceholder = existing?.track === 'UNASSIGNED' && input.startsAt === existingStart;
       if (existing && input.startsAt < existingStart!) {
@@ -1233,7 +1250,7 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
       }
       if (!administrator && existing?.baseId && existing.baseId !== actorAssignment?.baseId) throw forbidden();
 
-      if (existing && existing.baseId !== input.baseId && employeeRoles.includes('COORDINATOR')) {
+      if (existing && existing.baseId !== input.baseId && currentEmployeeRoles.includes('COORDINATOR')) {
         const assignedMines = await tx.mineCoordinatorAssignment.findMany({
           where: { coordinatorId: employeeId, currentMineId: { not: null } },
           include: { mine: { select: { baseId: true } } },

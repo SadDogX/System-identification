@@ -153,7 +153,7 @@ export function UsersPage() {
           }}
         />
       </div>
-      <UserFormDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+      <UserFormDialog open={createOpen} mode="create" onClose={() => setCreateOpen(false)} />
     </>
   );
 }

@@ -59,8 +59,10 @@ export const requireSystemRole = (...roles: string[]) =>
     const user = currentUser(req);
     if (user.role === 'ADMIN') return next();
 
+    const required = new Set(roles);
+    if (required.has('COORDINATOR')) required.add('MANAGER');
     const grant = await prisma.userSystemRole.findFirst({
-      where: { userId: user.id, revokedAt: null, systemRole: { code: { in: roles }, isActive: true } },
+      where: { userId: user.id, revokedAt: null, systemRole: { code: { in: [...required] }, isActive: true } },
       select: { id: true },
     });
     if (!grant) throw forbidden();

@@ -631,16 +631,10 @@ textarea {
   line-height: 1;
 }
 
-.annual-schedule-wrap {
-  position: relative;
-  overflow-x: auto;
-  overflow-y: auto;
-  max-width: 100%;
-  height: min(68vh, 720px);
-  padding-bottom: 18px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
+.annual-schedule-scroll-host { position: relative; max-width: 100%; }
+.annual-schedule-scrollbar { height: 18px; overflow-x: auto; overflow-y: hidden; margin-bottom: 4px; border: 1px solid var(--border-strong); background: var(--bg); scrollbar-gutter: stable; }
+.annual-schedule-scrollbar-track { height: 1px; }
+.annual-schedule-wrap { position: relative; overflow-x: auto; overflow-y: auto; max-width: 100%; height: min(68vh, 720px); border: 1px solid var(--border); background: var(--surface); }
 
 .annual-schedule thead tr:first-child th {
   position: sticky;
@@ -653,6 +647,8 @@ textarea {
   top: 29px;
   z-index: 4;
 }
+
+.annual-schedule thead tr:nth-child(3) th { position: sticky; top: 52px; z-index: 4; }
 
 .annual-schedule thead .annual-name {
   z-index: 7;
@@ -697,6 +693,7 @@ textarea {
 .annual-day-head {
   min-width: 26px !important;
   font-size: 10px;
+  white-space: nowrap;
 }
 
 .annual-schedule th.annual-month.month-1,
@@ -722,6 +719,16 @@ textarea {
 .annual-schedule .weekend {
   font-weight: 700;
 }
+
+.annual-schedule-wrap table { min-width: max-content; }
+.annual-schedule-scrollbar { min-height: 18px; background: var(--bg); }
+.site-work-legend { margin: 0 0 12px; }
+.site-work-legend .schedule-legend-item i { width: 16px; height: 16px; border-radius: 3px; }
+.customer-site-work-table { min-width: 980px; }
+.customer-site-work-table td { white-space: nowrap; }
+.customer-site-work-table .site-work-status { display: inline-flex; padding: 3px 8px; border-radius: 4px; color: #fff; font-size: 11px; font-weight: 700; }
+.customer-site-work-table tr.site-work-overlap { box-shadow: inset 4px 0 #c62828; }
+.customer-site-work-table tr.site-work-overlap td { background: #fdecec; }
 
 .schedule-stats {
   display: grid;
@@ -1976,3 +1983,11 @@ button.stat:hover {
     min-width: 170px !important;
   }
 }
+
+.site-work-legend { margin: 0 0 12px; }
+.site-work-legend .schedule-legend-item i { width: 16px; height: 16px; border-radius: 3px; }
+.customer-site-work-table { min-width: 980px; }
+.customer-site-work-table td { white-space: nowrap; }
+.customer-site-work-table .site-work-status { display: inline-flex; padding: 3px 8px; border-radius: 4px; color: #fff; font-size: 11px; font-weight: 700; }
+.customer-site-work-table tr.site-work-overlap { box-shadow: inset 4px 0 #c62828; }
+.customer-site-work-table tr.site-work-overlap td { background: #fdecec; }

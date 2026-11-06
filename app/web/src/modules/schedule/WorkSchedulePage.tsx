@@ -9,7 +9,7 @@ import { ScheduleControlPanel, WorkScheduleCalendar, WorkScheduleLegend, getSche
 
 const yearTabs = (year: number) => [year, year + 1, ...Array.from({ length: 5 }, (_, index) => year - index - 1)];
 
-export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
+export function WorkSchedulePage({ admin = false, team = false }: { admin?: boolean; team?: boolean }) {
   const { search } = useRouter();
   const initialUser = search.get('userId') ?? '';
   const currentYear = new Date().getFullYear();
@@ -24,7 +24,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
 
   const save = useAction(async () => {
     if (!draft) return;
-    for (const date of deleted) await api.delete(`/admin/work-schedule/${selectedUser}/${date}`);
+    for (const date of deleted) await api.delete(`${team ? '/team' : '/admin'}/work-schedule/${selectedUser}/${date}`);
     for (const [date, status] of draft) {
       if (!deleted.has(date) && saved.get(date) !== status) await update.run({ date, status });
     }
@@ -32,22 +32,23 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
     setDeleted(new Set());
     invalidate('schedule');
   });
-  const users = useQuery(admin ? 'schedule:users' : null, () => api.get<UserDto[]>('/admin/work-schedule/users'));
-  const path = admin ? '/admin/work-schedule' : '/me/work-schedule';
-  const { data, error } = useQuery(`schedule:${admin}:${selectedUser}:${year}`, () =>
+  const canEdit = admin || team;
+  const users = useQuery(canEdit ? `schedule:users:${team}` : null, () => api.get<UserDto[]>(team ? '/team/work-schedule/users' : '/admin/work-schedule/users'));
+  const path = team ? '/team/work-schedule' : admin ? '/admin/work-schedule' : '/me/work-schedule';
+  const { data, error } = useQuery(`schedule:${admin}:${team}:${selectedUser}:${year}`, () =>
     api.get<WorkScheduleDto>(path, { userId: selectedUser, year }),
   );
   const saved = new Map((data?.entries ?? []).map((entry) => [entry.date, entry.status]));
   const map = draft ?? saved;
   const update = useAction(({ date, status }: { date: string; status: WorkDayStatus }) =>
-    api.put(`/admin/work-schedule/${selectedUser}/${date}`, { date, status }),
+    api.put(`${team ? '/team' : '/admin'}/work-schedule/${selectedUser}/${date}`, { date, status }),
   );
 
   useEffect(() => {
-  if (!admin || selectedUser || !users.data?.length) return;
+  if (!canEdit || selectedUser || !users.data?.length) return;
 
   setSelectedUser(String(users.data[0].id));
-}, [admin, selectedUser, users.data]);
+}, [canEdit, selectedUser, users.data]);
 
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
   }, []);
 
   const select = (date: string, event: PointerEvent<HTMLButtonElement>) => {
-    if (!admin || !selectedUser) return;
+    if (!canEdit || !selectedUser) return;
     if (event.ctrlKey || event.metaKey) {
       setSelected((current) => (current.includes(date) ? current.filter((item) => item !== date) : [...current, date]));
     } else {
@@ -74,7 +75,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
     setSelected(allDates.slice(Math.min(start, end), Math.max(start, end) + 1));
   };
   const wheel = (event: WheelEvent<HTMLButtonElement>, date: string) => {
-    if (!admin || !selectedUser) return;
+    if (!canEdit || !selectedUser) return;
     event.preventDefault();
     const targets = selected.length ? selected : [date];
     const current = map.get(targets[0]);
@@ -101,7 +102,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
   return (
     <>
       <ScheduleControlPanel
-        title="График сотрудника"
+        title={canEdit ? 'График сотрудника' : 'Мой график'}
         subtitle="Удерживайте Shift для диапазона, Ctrl для отдельных дат. Колесо меняет статус."
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
@@ -122,7 +123,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
             </button>
           ))}
         </div>
-        {admin && (
+        {canEdit && (
           <div className="row wrap mb">
             <SelectField
               label="Сотрудник"
@@ -164,7 +165,7 @@ export function WorkSchedulePage({ admin = false }: { admin?: boolean }) {
           </div>
         )}
       </ScheduleControlPanel>
-      {admin && !selectedUser ? (
+      {canEdit && !selectedUser ? (
         <div className="empty">Выберите сотрудника для редактирования графика.</div>
       ) : (
         data && (

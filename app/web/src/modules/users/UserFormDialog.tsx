@@ -7,11 +7,15 @@ import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { useForm } from '../../core/form.ts';
 import { ROLE_LABELS } from '../../core/utils.ts';
 
+export type UserDialogMode = 'create' | 'view' | 'edit';
+
 interface Props {
   open: boolean;
+  mode: UserDialogMode;
   /** Не задан — создание нового пользователя. */
   user?: UserDto;
   onClose: () => void;
+  onModeChange?: (mode: UserDialogMode) => void;
 }
 
 const empty = (user?: UserDto) => ({
@@ -26,9 +30,10 @@ const empty = (user?: UserDto) => ({
   isActive: user?.isActive ?? true,
 });
 
-export function UserFormDialog({ open, user, onClose }: Props) {
+export function UserFormDialog({ open, mode, user, onClose, onModeChange }: Props) {
   const me = useCurrentUser();
-  const isEdit = !!user;
+  const isEdit = mode === 'edit';
+  const isView = mode === 'view';
   const isSelf = user?.id === me.id;
   const form = useForm(empty(user));
   const { reset } = form;
@@ -59,32 +64,47 @@ export function UserFormDialog({ open, user, onClose }: Props) {
 
   const hasFieldErrors = Object.values(form.errors).some(Boolean);
 
+  const title = mode === 'create' ? 'Новый пользователь' : mode === 'view' ? 'Просмотр пользователя' : 'Редактирование пользователя';
+
   return (
     <Dialog
       open={open}
       wide
-      title={isEdit ? 'Редактирование пользователя' : 'Новый пользователь'}
+      title={title}
       onClose={onClose}
-      onSubmit={submit}
+      onSubmit={isView ? undefined : submit}
       actions={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={save.pending}>
-            {isEdit ? 'Сохранить' : 'Создать'}
-          </button>
-        </>
+        isView ? (
+          <>
+            {onModeChange && (
+              <button type="button" className="btn btn-primary" onClick={() => onModeChange('edit')}>
+                Редактировать
+              </button>
+            )}
+            <button type="button" className="btn" onClick={onClose}>
+              Закрыть
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn" onClick={onClose}>
+              Отмена
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={save.pending}>
+              {isEdit ? 'Сохранить' : 'Создать'}
+            </button>
+          </>
+        )
       }
     >
-      <TextField label="ФИО *" {...form.field('fullName')} />
+      <TextField label="ФИО *" disabled={isView} {...form.field('fullName')} />
       <div className="form-grid">
-        <TextField label="Логин *" disabled={isEdit} {...form.field('login')} />
-        {!isEdit && <PasswordField label="Временный пароль *" autoComplete="new-password" help="Пользователь сменит его при первом входе" {...form.field('password')} />}
+        <TextField label="Логин *" disabled={isView || isEdit} {...form.field('login')} />
+        {!isEdit && !isView && <PasswordField label="Временный пароль *" autoComplete="new-password" help="Пользователь сменит его при первом входе" {...form.field('password')} />}
       </div>
       <SelectField
         label="Роль"
-        disabled={isSelf}
+        disabled={isView || isSelf}
         help={isSelf ? 'Собственную роль изменить нельзя' : 'Удостоверения ведутся только у сотрудников'}
         {...form.field('role')}
       >
@@ -94,7 +114,7 @@ export function UserFormDialog({ open, user, onClose }: Props) {
           </option>
         ))}
       </SelectField>
-      <SelectField label="Должность" help="Список ведётся в разделе «Должности»" {...form.field('positionId')}>
+      <SelectField label="Должность" disabled={isView} help="Список ведётся в разделе «Должности»" {...form.field('positionId')}>
         <option value="">— не указана —</option>
         {positionOptions.map((p) => (
           <option key={p.id} value={p.id}>
@@ -104,16 +124,22 @@ export function UserFormDialog({ open, user, onClose }: Props) {
         ))}
       </SelectField>
       <div className="form-grid">
-        <TextField label="Телефон" {...form.field('phone')} />
-        <TextField label="Email" type="email" {...form.field('email')} />
+        <TextField label="Телефон" disabled={isView} {...form.field('phone')} />
+        <TextField label="Email" type="email" disabled={isView} {...form.field('email')} />
       </div>
-      {isEdit && (
+      {isEdit && !isView && (
         <Checkbox
           label={form.values.isActive ? 'Активен' : 'Заблокирован'}
           checked={form.values.isActive}
           disabled={isSelf}
           onChange={(v) => form.set('isActive', v)}
         />
+      )}
+      {isView && (
+        <div>
+          <div className="muted small">Статус</div>
+          <span className={`chip small ${form.values.isActive ? 'success' : 'danger'}`}>{form.values.isActive ? 'Активен' : 'Заблокирован'}</span>
+        </div>
       )}
       {save.error && !hasFieldErrors ? <Alert>{errorMessage(save.error)}</Alert> : null}
     </Dialog>

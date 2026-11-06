@@ -10,7 +10,7 @@ export async function systemRoleCodes(userId: number): Promise<string[]> {
   return grants.map(({ systemRole }) => systemRole.code);
 }
 
-/** User IDs the caller may manage. ADMIN sees all; other roles are limited to active org links. */
+/** User IDs the caller may manage. ADMIN sees all; other roles stay in their active org scope. */
 export async function manageableUserIds(actor: User): Promise<number[]> {
   const roles = await systemRoleCodes(actor.id);
   if (actor.role === 'ADMIN' || roles.includes('ADMIN')) return [];
@@ -19,17 +19,31 @@ export async function manageableUserIds(actor: User): Promise<number[]> {
   if (!employee) return [actor.id];
   const current = await prisma.employeeAssignment.findUnique({
     where: { activeEmployeeId: employee.id },
-    select: { baseId: true, track: true },
+    select: { baseId: true },
   });
 
   let assignmentWhere: Prisma.EmployeeAssignmentWhereInput;
   if (roles.includes('MANAGER') && current?.baseId !== null && current?.baseId !== undefined) {
     assignmentWhere = { activeEmployeeId: { not: null }, baseId: current.baseId };
+  } else if (roles.includes('COORDINATOR')) {
+    const coordinated = await prisma.mineCoordinatorAssignment.findMany({
+      where: { coordinatorId: employee.id, currentMineId: { not: null } },
+      select: { mineId: true },
+    });
+    const mines = coordinated.length
+      ? await prisma.mine.findMany({ where: { id: { in: coordinated.map(({ mineId }) => mineId) } }, select: { baseId: true } })
+      : [];
+    const baseIds = [...new Set(mines.map(({ baseId }) => baseId))];
+    assignmentWhere = {
+      activeEmployeeId: { not: null },
+      OR: [
+        { supervisorEmployeeId: employee.id },
+        ...(baseIds.length ? [{ baseId: { in: baseIds }, track: 'TRS' as const }] : []),
+      ],
+    };
   } else if (roles.includes('SENIOR_MECHANIC')) {
     assignmentWhere = { activeEmployeeId: { not: null }, track: 'R_AND_M' };
-  } else if (
-    roles.some((role) => ['COORDINATOR', 'MECHANIC', 'SHOP_FOREMAN'].includes(role))
-  ) {
+  } else if (roles.some((role) => ['MECHANIC', 'SHOP_FOREMAN'].includes(role))) {
     assignmentWhere = { activeEmployeeId: { not: null }, supervisorEmployeeId: employee.id };
   } else {
     return [actor.id];

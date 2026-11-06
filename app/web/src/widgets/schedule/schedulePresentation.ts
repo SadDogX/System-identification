@@ -1,5 +1,22 @@
 import type { WorkDayStatus } from '@app/shared';
 
+export type CustomerSiteWorkStatus = 'PAST' | 'UPCOMING' | 'ACTIVE' | 'OVERLAP';
+
+export const CUSTOMER_SITE_WORK_COLORS: Record<CustomerSiteWorkStatus, string> = {
+  PAST: '#9ca3af',
+  UPCOMING: '#f2c94c',
+  ACTIVE: '#1f4e79',
+  OVERLAP: '#c62828',
+};
+
+export const getCustomerSiteWorkStatus = (startsAt: string, expectedEndAt: string, hasOverlap: boolean, now = new Date()): CustomerSiteWorkStatus => {
+  if (hasOverlap) return 'OVERLAP';
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (expectedEndAt < today) return 'PAST';
+  if (startsAt > today) return 'UPCOMING';
+  return 'ACTIVE';
+};
+
 export const WORK_SCHEDULE_LABELS: Record<WorkDayStatus, string> = {
   WORK: 'Работа',
   FREE_SHIFT: 'Свободная вахта',

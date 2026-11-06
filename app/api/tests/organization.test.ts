@@ -639,6 +639,96 @@ describe('планирование выездов на работы', () => {
   });
 });
 
+describe('team work schedule access', () => {
+  it('allows manager and coordinator schedule editing only in their scopes', async () => {
+    const ctx = await setup();
+    const date = iso(2);
+    const body = { date, status: 'VACATION' };
+    const coordUsers = await api('GET', '/api/team/work-schedule/users', { token: ctx.coordinatorToken });
+    assert.equal(coordUsers.status, 200, JSON.stringify(coordUsers.body));
+    assert.deepEqual(coordUsers.body.map((row: { id: number }) => row.id).sort(), [ctx.coordinator.id, ctx.employee.id].sort());
+    const managerUsers = await api('GET', '/api/team/work-schedule/users', { token: ctx.managerToken });
+    assert.equal(managerUsers.status, 200, JSON.stringify(managerUsers.body));
+    assert.equal(managerUsers.body.length, 4);
+    const annual = await api('GET', '/api/team/work-schedule/annual?year=' + Number(date.slice(0, 4)), { token: ctx.coordinatorToken });
+    assert.equal(annual.status, 200, JSON.stringify(annual.body));
+    assert.equal(annual.body.rows.length, 2);
+    const saved = await api('PUT', '/api/team/work-schedule/' + ctx.employee.id + '/' + date, { token: ctx.coordinatorToken, body });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.status, 'VACATION');
+    const outsider = await createUser('USER');
+    assert.equal((await api('GET', '/api/team/work-schedule?userId=' + outsider.id, { token: ctx.coordinatorToken })).status, 403);
+    assert.equal((await api('PUT', '/api/team/work-schedule/' + outsider.id + '/' + date, { token: ctx.managerToken, body })).status, 403);
+    assert.equal((await api('DELETE', '/api/team/work-schedule/' + outsider.id + '/' + date, { token: ctx.coordinatorToken })).status, 403);
+    assert.equal((await api('GET', '/api/team/work-schedule/users', { token: await tokenFor(ctx.employee.login) })).status, 403);
+  });
+});
+
+describe('position role synchronization', () => {
+  it('maps Manager and Coordinator titles to active role grants', async () => {
+    const ctx = await setup();
+    const managerPosition = await prisma.position.create({ data: { name: 'Менеджер БПО' } });
+    const coordinatorPosition = await prisma.position.create({ data: { name: 'Координатор' } });
+    const createdByTitle = await api('POST', '/api/admin/users', { token: ctx.adminToken, body: { fullName: 'Created manager', login: 'createdmanager', password: 'password123', role: 'USER', positionId: managerPosition.id } });
+    assert.equal(createdByTitle.status, 201, JSON.stringify(createdByTitle.body));
+    assert.ok(createdByTitle.body.systemRoles.includes('MANAGER'));
+    const manager = await createUser('USER');
+    const createManager = await api('PATCH', '/api/admin/users/' + manager.id, { token: ctx.adminToken, body: { positionId: managerPosition.id } });
+    assert.equal(createManager.status, 200, JSON.stringify(createManager.body));
+    assert.ok(createManager.body.systemRoles.includes('MANAGER'));
+    assert.equal(createManager.body.systemRoles.includes('COORDINATOR'), false);
+    const managerToken = await tokenFor(manager.login);
+    const managerCanOpenCoordinatorPage = await api('GET', '/api/org/customer-site-works/options', { token: managerToken });
+    assert.equal(managerCanOpenCoordinatorPage.status, 200, JSON.stringify(managerCanOpenCoordinatorPage.body));
+    const change = await api('PATCH', '/api/admin/users/' + manager.id, { token: ctx.adminToken, body: { positionId: coordinatorPosition.id } });
+    assert.equal(change.status, 200, JSON.stringify(change.body));
+    assert.ok(change.body.systemRoles.includes('COORDINATOR'));
+    assert.equal(change.body.systemRoles.includes('MANAGER'), false);
+  });
+  it('assigns the role from the position before validating assignment hierarchy', async () => {
+    const ctx = await setup();
+    const coordinatorPosition = await prisma.position.create({ data: { name: 'Координатор' } });
+    const employee = await createUser('USER');
+    const card = await prisma.employee.findUniqueOrThrow({ where: { userId: employee.id } });
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: card.id }, data: { startsAt: new Date(iso(-1) + 'T00:00:00.000Z') } });
+    const assignment = await api('POST', '/api/org/employees/' + card.id + '/assignments', { token: ctx.adminToken, body: { track: 'TRS', baseId: ctx.baseId, positionId: coordinatorPosition.id, supervisorEmployeeId: ctx.managerEmployee.id, startsAt: iso() } });
+    assert.equal(assignment.status, 201, JSON.stringify(assignment.body));
+    const grants = await prisma.userSystemRole.findMany({ where: { userId: employee.id, revokedAt: null }, include: { systemRole: { select: { code: true } } } });
+    assert.ok(grants.some((grant) => grant.systemRole.code === 'COORDINATOR'));
+  });
+});
+
+describe('customer site work registration', () => {
+  it('restricts coordinators to their teams and marks overlaps', async () => {
+    const ctx = await setup();
+    const mine = await api('POST', '/api/org/bases/' + ctx.baseId + '/mines', { token: ctx.managerToken, body: { name: 'Customer site mine', code: 'CSW-1' } });
+    assert.equal(mine.status, 201, JSON.stringify(mine.body));
+    const well = await api('POST', '/api/org/mines/' + mine.body.id + '/wells', { token: ctx.managerToken, body: { name: 'Customer site well', clusterNumber: 'CL-1' } });
+    assert.equal(well.status, 201, JSON.stringify(well.body));
+    const assignment = await api('POST', '/api/org/mines/' + mine.body.id + '/coordinator', { token: ctx.managerToken, body: { coordinatorEmployeeId: ctx.coordinatorEmployee.id, startsAt: iso() } });
+    assert.equal(assignment.status, 201, JSON.stringify(assignment.body));
+    const customer = await prisma.customer.create({ data: { name: 'Customer site test' } });
+    const options = await api('GET', '/api/org/customer-site-works/options', { token: ctx.coordinatorToken });
+    assert.equal(options.status, 200, JSON.stringify(options.body));
+    assert.deepEqual(options.body.supervisors.map((item: { id: number }) => item.id), [ctx.employeeCard.id]);
+    const input = { name: 'Customer job', customerId: customer.id, mineId: mine.body.id, wellId: well.body.id, startsAt: iso(1), expectedEndAt: iso(4), supervisorEmployeeId: ctx.employeeCard.id };
+    const first = await api('POST', '/api/org/customer-site-works', { token: ctx.coordinatorToken, body: input });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.equal(first.body.hasOverlap, false);
+    const wrongSupervisor = await api('POST', '/api/org/customer-site-works', { token: ctx.coordinatorToken, body: { ...input, name: 'Wrong supervisor', supervisorEmployeeId: ctx.managerEmployee.id } });
+    assert.equal(wrongSupervisor.status, 400);
+    const overlap = await api('POST', '/api/org/customer-site-works', { token: ctx.coordinatorToken, body: { ...input, name: 'Overlapping job', startsAt: iso(2), expectedEndAt: iso(5) } });
+    assert.equal(overlap.status, 201, JSON.stringify(overlap.body));
+    assert.equal(overlap.body.hasOverlap, true);
+    assert.equal(overlap.body.status, 'OVERLAP');
+    const listed = await api('GET', '/api/org/customer-site-works', { token: ctx.coordinatorToken });
+    assert.equal(listed.body.length, 2);
+    assert.ok(listed.body.every((item: { hasOverlap: boolean; status: string }) => item.hasOverlap && item.status === 'OVERLAP'));
+    const denied = await api('GET', '/api/org/customer-site-works/options', { token: await tokenFor(ctx.employee.login) });
+    assert.equal(denied.status, 403);
+  });
+});
+
 describe('системные роли и справочники статусов', () => {
   it('расширяет статусный справочник без изменения схемы и оставляет его администратору', async () => {
     const ctx = await setup();

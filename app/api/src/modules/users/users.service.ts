@@ -19,6 +19,7 @@ import { ensureUserCredentials } from '../credentials/credentials.service.ts';
 import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
 import { ensureEmployeeAndLegacyRole, syncLegacySystemRole, updateEmployeePosition } from '../organization/organization.service.ts';
+import { syncPositionSystemRole } from '../organization/positionRoles.ts';
 
 const PROFILE_FIELDS = ['fullName', 'role', 'positionId', 'phone', 'email', 'isActive'] as const;
 /** В журнал пишем название должности, а не её id. */
@@ -189,7 +190,7 @@ export async function create(actor: User, input: CreateUserRequest) {
       include: withPosition,
     });
     await ensureEmployeeAndLegacyRole(tx, created, actor.id);
-    // Удостоверения ведутся только у сотрудников
+    if (created.role !== 'ADMIN') await syncPositionSystemRole(tx, created.id, null, created.position?.name, actor.id);
     if (created.role === 'USER') await ensureUserCredentials(tx, created.id);
     await audit(tx, {
       actorId: actor.id,
@@ -201,7 +202,7 @@ export async function create(actor: User, input: CreateUserRequest) {
     });
     return created;
   });
-  return toUserDto(user);
+  return toUserDto(await prisma.user.findUniqueOrThrow({ where: { id: user.id }, include: withPosition }));
 }
 
 export async function update(actor: User, id: number, input: UpdateUserRequest) {
@@ -234,6 +235,10 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
     }
     if (input.positionId !== undefined && input.positionId !== existing.positionId) {
       await updateEmployeePosition(tx, updated, input.positionId, actor.id);
+    } else if (input.positionId !== undefined && input.positionId !== null) {
+      const position = await tx.position.findUnique({ where: { id: input.positionId }, select: { name: true } });
+      const { syncPositionSystemRole } = await import('../organization/positionRoles.ts');
+      await syncPositionSystemRole(tx, id, null, position?.name, actor.id);
     }
     if (updated.role === 'USER') await ensureUserCredentials(tx, id);
     await audit(tx, {
@@ -246,7 +251,7 @@ export async function update(actor: User, id: number, input: UpdateUserRequest) 
     });
     return updated;
   });
-  return toUserDto(user);
+  return toUserDto(await prisma.user.findUniqueOrThrow({ where: { id }, include: withPosition }));
 }
 
 /** Мягкое удаление: пользователь пропадает из списков, данные и история остаются. */

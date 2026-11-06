@@ -65,6 +65,11 @@ const SCHEDULE_USER_ITEMS: NavItem[] = [
   { to: '/user/work-schedule/calendar', label: 'Мой график', icon: 'overview' },
 ];
 
+const SCHEDULE_LEAD_ITEMS: NavItem[] = [
+  { to: '/admin/team-work-schedule', label: 'График команды', icon: 'table' },
+  { to: '/admin/team-work-schedule/calendar', label: 'Редактировать график', icon: 'overview' },
+];
+
 const ADMIN_NAV_GROUPS: NavGroup[] = [
   { label: 'Панель управления', icon: 'dashboard', to: '/admin/dashboard' },
   {
@@ -136,6 +141,7 @@ const LEAD_NAV_GROUPS: NavGroup[] = [
       { to: '/admin/dashboard', label: 'Сводка команды', icon: 'dashboard' },
       { to: '/admin/overview', label: 'Удостоверения команды', icon: 'overview' },
       { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
+      ...SCHEDULE_LEAD_ITEMS,
     ],
   },
 ];
@@ -145,7 +151,10 @@ const CREDENTIAL_LEAD_NAV_GROUPS: NavGroup[] = [
   {
     label: 'Моя команда',
     icon: 'people',
-    items: [{ to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' }],
+    items: [
+      { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
+      ...SCHEDULE_LEAD_ITEMS,
+    ],
   },
 ];
 
@@ -155,7 +164,11 @@ export function resolveNavGroups(user: UserDto): NavGroup[] {
   const isLead = user.systemRoles.some((role) => ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC'].includes(role));
   const isCredentialLead = user.systemRoles.some((role) => ['MECHANIC', 'SHOP_FOREMAN'].includes(role));
 
-  if (isLead) return LEAD_NAV_GROUPS;
+  if (isLead) return user.systemRoles.includes('COORDINATOR')
+    ? LEAD_NAV_GROUPS.map((group) => group.items?.some((item) => item.to === '/admin/dashboard')
+      ? { ...group, items: [...group.items, { to: '/admin/customer-site-works', label: '\u0420\u0430\u0431\u043e\u0442\u044b \u0437\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0430', icon: 'work' }] }
+      : group)
+    : LEAD_NAV_GROUPS;
   if (isCredentialLead) return CREDENTIAL_LEAD_NAV_GROUPS;
   return USER_NAV_GROUPS;
 }

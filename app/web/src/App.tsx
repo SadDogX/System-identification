@@ -30,6 +30,7 @@ import { ReferenceDataPage } from './modules/organization/ReferenceDataPage.tsx'
 import { SettingsPage } from './modules/settings/SettingsPage.tsx';
 import { PersonnelPage } from './modules/organization/PersonnelPage.tsx';
 import { WorkAssignmentsPage } from './modules/organization/WorkAssignmentsPage.tsx';
+import { CustomerSiteWorksPage } from './modules/organization/CustomerSiteWorksPage.tsx';
 
 interface Route {
   path: string;
@@ -46,9 +47,12 @@ const ROUTES: Route[] = [
   { path: '/admin/org/assignments', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <OrganizationPage key="assignments" view="assignments" /> },
   { path: '/admin/org/transfers', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <OrganizationPage key="transfers" view="transfers" /> },
   { path: '/admin/work-assignments', role: 'ADMIN', systemRoles: ['MANAGER', 'COORDINATOR'], render: () => <WorkAssignmentsPage /> },
+  { path: '/admin/customer-site-works', role: 'ADMIN', systemRoles: ['COORDINATOR', 'MANAGER'], render: () => <CustomerSiteWorksPage /> },
   { path: '/admin/org/contracts', role: 'ADMIN', systemRoles: ['MANAGER'], render: () => <WorkExecutionPage /> },
   { path: '/admin/work-schedule', role: 'ADMIN', render: () => <AnnualSchedulePage /> },
   { path: '/admin/work-schedule/calendar', role: 'ADMIN', render: () => <WorkSchedulePage admin /> },
+  { path: '/admin/team-work-schedule', role: 'ADMIN', systemRoles: ['MANAGER', 'COORDINATOR'], render: () => <AnnualSchedulePage team /> },
+  { path: '/admin/team-work-schedule/calendar', role: 'ADMIN', systemRoles: ['MANAGER', 'COORDINATOR'], render: () => <WorkSchedulePage team /> },
   { path: '/admin/work-schedule/shift-partners', role: 'ADMIN', render: () => <ShiftPartnersPage /> },
   { path: '/admin/radar-cards', role: 'ADMIN', render: () => <RadarCardsPage /> },
   { path: '/admin/ifo', role: 'ADMIN', render: () => <IfoPage /> },
