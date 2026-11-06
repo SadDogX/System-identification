@@ -125,6 +125,28 @@ describe('организационные назначения и доступ', 
     assert.equal(archive.status, 409);
   });
 
+  it('сохраняет системные роли пользователя через API и заменяет предыдущие grants', async () => {
+    const ctx = await setup();
+    const user = await createUser('USER');
+    const assigned = await api('PUT', `/api/admin/org/users/${user.id}/roles`, {
+      token: ctx.adminToken,
+      body: { roles: ['MANAGER'] },
+    });
+    assert.equal(assigned.status, 200, JSON.stringify(assigned.body));
+    assert.deepEqual(assigned.body.roles, ['MANAGER']);
+
+    const replaced = await api('PUT', `/api/admin/org/users/${user.id}/roles`, {
+      token: ctx.adminToken,
+      body: { roles: ['EMPLOYEE'] },
+    });
+    assert.equal(replaced.status, 200, JSON.stringify(replaced.body));
+    assert.deepEqual(replaced.body.roles, ['EMPLOYEE']);
+    const grants = await prisma.userSystemRole.findMany({
+      where: { userId: user.id, revokedAt: null },
+      include: { systemRole: { select: { code: true } } },
+    });
+    assert.deepEqual(grants.map((grant) => grant.systemRole.code).sort(), ['EMPLOYEE']);
+  });
   it('разрешает только одного действующего старшего механика на всю компанию', async () => {
     const admin = await createUser('ADMIN');
     const adminToken = await tokenFor(admin.login);

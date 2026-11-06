@@ -65,7 +65,7 @@ export function UserDetailPage({ id }: { id: number }) {
           emptyText="Справочник удостоверений пуст" />
       </>}
     {dialogs}
-    <UserFormDialog open={editOpen} mode="edit" user={user} onClose={() => setEditOpen(false)} />
+    <UserFormDialog open={editOpen} mode="edit" user={user} systemRoles={user.systemRoles} onClose={() => setEditOpen(false)} />
     <ConfirmDialog
       open={deleteOpen}
       title="Удалить пользователя?"

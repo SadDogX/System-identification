@@ -89,7 +89,7 @@ export function PersonnelPage({ mode }: { mode: PersonnelMode }) {
   const openUserDialog = async (employee: Employee, mode: UserDialogMode) => {
     try {
       const response = await api.get<{ user: UserDto; credentials: unknown[] }>(`/admin/users/${employee.user.id}`);
-      setSelectedUser(response.user);
+      setSelectedUser({ ...response.user, systemRoles: response.user.systemRoles ?? [] });
       setUserDialogMode(mode);
       setUserDialogOpen(true);
     } catch (err) {

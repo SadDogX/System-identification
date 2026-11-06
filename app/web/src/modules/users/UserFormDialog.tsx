@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_TEMP_PASSWORD, createUserSchema, updateUserSchema, type PositionDto, type UserDto } from '@app/shared';
 import { api, errorMessage } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
@@ -14,9 +14,12 @@ interface Props {
   mode: UserDialogMode;
   /** Не задан — создание нового пользователя. */
   user?: UserDto;
+  systemRoles?: string[];
   onClose: () => void;
   onModeChange?: (mode: UserDialogMode) => void;
 }
+
+const NO_SYSTEM_ROLES: string[] = [];
 
 const empty = (user?: UserDto) => ({
   fullName: user?.fullName ?? '',
@@ -30,7 +33,7 @@ const empty = (user?: UserDto) => ({
   isActive: user?.isActive ?? true,
 });
 
-export function UserFormDialog({ open, mode, user, onClose, onModeChange }: Props) {
+export function UserFormDialog({ open, mode, user, systemRoles, onClose, onModeChange }: Props) {
   const me = useCurrentUser();
   const isEdit = mode === 'edit';
   const isView = mode === 'view';
@@ -38,16 +41,30 @@ export function UserFormDialog({ open, mode, user, onClose, onModeChange }: Prop
   const form = useForm(empty(user));
   const { reset } = form;
   const positions = useQuery(open ? 'admin:positions:all' : null, () => api.get<PositionDto[]>('/admin/positions', { archived: true }));
+  const roleCatalog = useQuery(open && isEdit ? 'admin:system-roles' : null, () => api.get<{ code: string; name: string; isActive: boolean }[]>('/admin/org/roles'));
+  const currentSystemRoles = systemRoles ?? user?.systemRoles ?? NO_SYSTEM_ROLES;
+  const [selectedSystemRoles, setSelectedSystemRoles] = useState<string[]>(currentSystemRoles);
   // Архивные должности не предлагаются, но текущая остаётся в списке
   const positionOptions = (positions.data ?? []).filter((p) => !p.isArchived || p.id === user?.positionId);
 
   useEffect(() => {
-    if (open) reset(empty(user));
-  }, [open, user, reset]);
+    if (!open) return;
+    reset(empty(user));
+    setSelectedSystemRoles(currentSystemRoles);
+  }, [open, user, currentSystemRoles, reset]);
 
-  const save = useAction((data: unknown) => (isEdit ? api.patch(`/admin/users/${user!.id}`, data) : api.post('/admin/users', data)), {
-    onSuccess: () => {
+  const save = useAction(async (data: unknown) => {
+    const result = isEdit ? await api.patch(`/admin/users/${user!.id}`, data) : await api.post('/admin/users', data);
+    const currentRoles = [...currentSystemRoles].sort();
+    const nextRoles = [...selectedSystemRoles].sort();
+    const rolesChanged = currentRoles.length !== nextRoles.length || currentRoles.some((role, index) => role !== nextRoles[index]);
+    if (isEdit && user && !isSelf && rolesChanged) await api.put(`/admin/org/users/${user.id}/roles`, { roles: selectedSystemRoles });
+    if (isEdit && user) return api.get<{ user: UserDto }>(`/admin/users/${user.id}`).then((response) => response.user);
+    return result;
+  }, {
+    onSuccess: (updatedUser) => {
       invalidate('admin');
+      if (isEdit && updatedUser && typeof updatedUser === 'object' && 'systemRoles' in updatedUser) setSelectedSystemRoles((updatedUser as UserDto).systemRoles);
       onClose();
     },
     onError: (err) => form.applyServerErrors(err),
@@ -103,9 +120,9 @@ export function UserFormDialog({ open, mode, user, onClose, onModeChange }: Prop
         {!isEdit && !isView && <PasswordField label="Временный пароль *" autoComplete="new-password" help="Пользователь сменит его при первом входе" {...form.field('password')} />}
       </div>
       <SelectField
-        label="Роль"
+        label="Базовая роль учётной записи"
         disabled={isView || isSelf}
-        help={isSelf ? 'Собственную роль изменить нельзя' : 'Удостоверения ведутся только у сотрудников'}
+        help="USER/ADMIN — роль аккаунта; системные роли и должность задаются отдельно."
         {...form.field('role')}
       >
         {(['USER', 'ADMIN'] as const).map((r) => (
@@ -114,6 +131,19 @@ export function UserFormDialog({ open, mode, user, onClose, onModeChange }: Prop
           </option>
         ))}
       </SelectField>
+      {isEdit && <section className="stack tight" aria-label="System roles">
+        <strong>Системные роли</strong>
+        <span className="muted small">Дополнительные права доступа. Должность и базовая роль учётной записи редактируются отдельно.</span>
+        {roleCatalog.loading && <span className="muted small">Загружаю системные роли…</span>}
+        {roleCatalog.error && <Alert>{roleCatalog.error}</Alert>}
+        {roleCatalog.data?.filter((item) => item.isActive).map((item) => (
+          <label className="check-row" key={item.code}>
+            <input type="checkbox" checked={selectedSystemRoles.includes(item.code)} disabled={isView || isSelf || item.code === 'ADMIN' || save.pending || !roleCatalog.data}
+              onChange={(event) => setSelectedSystemRoles((current) => event.target.checked ? [...current, item.code] : current.filter((code) => code !== item.code))} />
+            <span>{item.name} <span className="muted small">({item.code}{item.code === 'ADMIN' ? ', назначается отдельно' : ''})</span></span>
+          </label>
+        ))}
+      </section>}
       <SelectField label="Должность" disabled={isView} help="Список ведётся в разделе «Должности»" {...form.field('positionId')}>
         <option value="">— не указана —</option>
         {positionOptions.map((p) => (

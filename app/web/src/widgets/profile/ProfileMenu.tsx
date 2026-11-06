@@ -35,7 +35,8 @@ export function ProfileMenu() {
           <div className="popover-head" style={{ display: 'block' }}>
             <div className="bold">{user.fullName}</div>
             <div className="muted small">
-              {ROLE_LABELS[user.role]} · {user.login}
+              {ROLE_LABELS[user.role]} · {user.login}<><br></br></>
+              {user.position}
             </div>
           </div>
           {user.role === 'USER' && (
