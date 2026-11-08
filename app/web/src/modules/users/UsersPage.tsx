@@ -10,10 +10,7 @@ import { UserFormDialog } from './UserFormDialog.tsx';
 type Filter = (typeof USER_LIST_FILTERS)[number];
 
 const FILTER_LABELS: Record<Filter, string> = {
-  all: 'Все',
-  USER: 'Сотрудники',
-  ADMIN: 'Администраторы',
-  hasRed: 'Есть красные',
+  all: 'Все',  hasRed: 'Есть красные',
   hasYellow: 'Есть жёлтые',
   hasWhite: 'Есть незаполненные',
 };
@@ -118,12 +115,12 @@ export function UsersPage() {
                     {u.position && <div className="muted small">{u.position}</div>}
                   </td>
                   <td>{u.login}</td>
-                  <td>{ROLE_LABELS[u.role]}</td>
+                  <td>{u.position ?? u.systemRoles.map((role) => ROLE_LABELS[role] ?? role).join(", ")}</td>
                   <td>
                     <span className={`chip small ${u.isActive ? '' : 'danger'}`}>{u.isActive ? 'Активен' : 'Заблокирован'}</span>
                   </td>
                   <td>
-                    {u.role === 'USER' ? (
+                    {u.systemRoles.includes('ADMIN') ? (
                       <div className="row" title={`Всего: ${u.counts.total}`}>
                         <CountChip status="RED" count={u.counts.RED} />
                         <CountChip status="YELLOW" count={u.counts.YELLOW} />

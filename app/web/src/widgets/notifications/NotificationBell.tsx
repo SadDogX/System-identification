@@ -26,7 +26,7 @@ export function NotificationBell() {
     api.get<Paginated<NotificationDto>>('/me/notifications', { pageSize: 8 }),
   );
 
-  const allPath = user.role === 'ADMIN' ? '/admin/notifications' : '/user/notifications';
+  const allPath = user.systemRoles.includes('ADMIN') ? '/admin/notifications' : '/user/notifications';
   const count = unread.data?.count ?? 0;
 
   const goToNotification = (notification: NotificationDto) => {

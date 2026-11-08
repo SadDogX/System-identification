@@ -1,153 +1,76 @@
 import { useMemo, useState } from 'react';
-import { DEFAULT_TEMP_PASSWORD, type PositionDto, type UserDto } from '@app/shared';
+import type { PositionDto, UserDto } from '@app/shared';
 import { api } from '../../core/api.ts';
-import { invalidate, useAction, useQuery } from '../../core/data.ts';
-import { Alert, Dialog, PageHeader, SelectField, TextField } from '@app/shared/ui';
+import { invalidate, useQuery } from '../../core/data.ts';
+import { Alert, Icon, PageHeader, SearchInput } from '@app/shared/ui';
 import { Link } from '../../core/router.tsx';
-import { ActionError } from '../../widgets/feedback/ActionError';
 import { UserFormDialog, type UserDialogMode } from '../users/UserFormDialog.tsx';
+import { filterAndSortPersonnel, type PersonnelSortDirection, type PersonnelSortKey } from './personnelTable.ts';
 
-type Track = 'TRS' | 'R_AND_M';
+type Track = 'TRS' | 'R_AND_M' | 'UNASSIGNED';
 interface Base { id: number; name: string; code: string | null }
-interface Employee { id: number; user: { id: number; fullName: string; login: string; phone: string | null; email: string | null; systemRoles: { systemRole: { code: string } }[] }; assignments: { baseId: number | null; track: Track | 'UNASSIGNED'; position: { name: string } | null }[] }
-interface CreatedUser { id: number }
-interface EmployeeIdentity { id: number }
+interface Assignment { baseId: number | null; supervisorEmployeeId: number | null; startsAt: string; track: Track; positionId: number | null; position: { name: string } | null }
+interface Employee { id: number; user: { id: number; fullName: string; login: string; phone: string | null; email: string | null; systemRoles: { systemRole: { code: string } }[] }; assignments: Assignment[] }
+interface PersonnelAssignment { baseId: number | null; supervisorEmployeeId: number | null; startsAt: string; track: Track }
 
-const FIELD_ROLES = [{ code: 'EMPLOYEE', label: 'Полевой сотрудник' }, { code: 'COORDINATOR', label: 'Координатор' }, { code: 'MANAGER', label: 'Менеджер' }];
-const SHOP_ROLES = [{ code: 'SHOP_EMPLOYEE', label: 'Цеховой сотрудник' }, { code: 'MECHANIC', label: 'Механик' }, { code: 'SHOP_FOREMAN', label: 'Мастер цеха' }];
-
-type PersonnelMode = 'directory' | 'create';
-
-/** Справочник персонала или отдельный сценарий создания сотрудника. */
-export function PersonnelPage({ mode }: { mode: PersonnelMode }) {
+export function PersonnelPage({ mode }: { mode: 'directory' | 'create' }) {
   const basesQuery = useQuery('org:bases', () => api.get<Base[]>('/org/bases'));
   const positionsQuery = useQuery('org:personnel:positions', () => api.get<PositionDto[]>('/admin/positions'));
   const employeesQuery = useQuery('org:employees', () => api.get<Employee[]>('/org/employees'));
-  const [track, setTrack] = useState<Track>('TRS');
-  const [role, setRole] = useState('EMPLOYEE');
-  const [baseId, setBaseId] = useState('');
-  const [positionId, setPositionId] = useState('');
-  const [supervisorId, setSupervisorId] = useState('');
-  const [startsAt, setStartsAt] = useState(new Date().toISOString().slice(0, 10));
-  const [fullName, setFullName] = useState('');
-  const [login, setLogin] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [feedback, setFeedback] = useState('');
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [editValues, setEditValues] = useState({ fullName: '', phone: '', email: '' });
-  const [userDialogOpen, setUserDialogOpen] = useState(false);
-  const [userDialogMode, setUserDialogMode] = useState<UserDialogMode>('view');
-  const [selectedUser, setSelectedUser] = useState<UserDto | undefined>(undefined);
-  const showForm = mode === 'create';
-  const roles = track === 'TRS' ? FIELD_ROLES : SHOP_ROLES;
-  const positions = positionsQuery.data ?? [];
-  const visiblePositions = useMemo(() => positions.filter((item) => {
-    const name = item.name.toLocaleLowerCase('ru');
-    return track === 'TRS'
-      ? /техник|инженер|руководитель группы|координатор/.test(name)
-      : /слесарь|механик|мастер/.test(name);
-  }), [positions, track]);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<{ key: PersonnelSortKey; direction: PersonnelSortDirection }>({ key: 'name', direction: 'asc' });
+  const [dialogOpen, setDialogOpen] = useState(mode === 'create');
+  const [dialogMode, setDialogMode] = useState<UserDialogMode>('create');
+  const [selectedUser, setSelectedUser] = useState<UserDto>();
+  const [selectedAssignment, setSelectedAssignment] = useState<PersonnelAssignment>();
   const employees = employeesQuery.data ?? [];
-  const positionName = positions.find((item) => item.id === Number(positionId))?.name.toLocaleLowerCase('ru') ?? '';
-  const positionRole = /^менеджер(?:\s|$)/.test(positionName) ? 'MANAGER' : /^координатор(?:\s|$)/.test(positionName) ? 'COORDINATOR' : null;
-  const assignedRole = positionRole ?? role;
-  const requiredSupervisor = assignedRole === 'COORDINATOR' ? 'MANAGER' : assignedRole === 'EMPLOYEE' ? 'COORDINATOR' : assignedRole === 'SHOP_EMPLOYEE' ? 'SHOP_FOREMAN' : assignedRole === 'MECHANIC' ? 'SENIOR_MECHANIC' : '';
-  const roleOptions = roles.filter((item) => item.code !== 'MANAGER');
-  const supervisors = employees.filter((item) => item.user.systemRoles.some((grant) => grant.systemRole.code === requiredSupervisor) && (!baseId || item.assignments[0]?.baseId === Number(baseId)));
-  
-  const create = useAction(async () => {
-    const assignedSupervisorId = supervisorId || (supervisors.length === 1 ? String(supervisors[0].id) : '');
-    if (!fullName.trim() || !login.trim() || !baseId || !positionId || (requiredSupervisor && !assignedSupervisorId)) throw new Error('Заполните карточку и назначение');
-    const created = await api.post<CreatedUser>('/admin/users', { fullName: fullName.trim(), login: login.trim(), password: DEFAULT_TEMP_PASSWORD, role: 'USER', positionId: Number(positionId), phone: phone || null, email: email || null });
-    const employee = await api.get<EmployeeIdentity>(`/org/users/${created.id}/employee`);
-    await api.put(`/admin/org/users/${created.id}/roles`, { roles: [assignedRole] });
-    await api.post(`/org/employees/${employee.id}/assignments`, { track, baseId: Number(baseId), positionId: Number(positionId), supervisorEmployeeId: assignedSupervisorId ? Number(assignedSupervisorId) : null, startsAt });
-  }, {
-    onSuccess: () => {
-      setFeedback('Сотрудник создан и назначен. Временный пароль: user12345.');
-      setFullName(''); setLogin(''); setPhone(''); setEmail(''); setSupervisorId(''); setPositionId('');
-      invalidate('org:'); invalidate('admin:');
-    }
-  });
-  const saveEmployee = useAction((employee: Employee) => api.patch(`/org/employees/${employee.id}/profile`, {
-    fullName: editValues.fullName,
-    phone: editValues.phone,
-    email: editValues.email,
-  }), {
-    onSuccess: () => {
-      setEditingEmployee(null);
-      invalidate('org:employees');
-    },
-  });
-  const edit = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setEditValues({ fullName: employee.user.fullName, phone: employee.user.phone ?? '', email: employee.user.email ?? '' });
-    saveEmployee.reset();
-  };
+  const baseNames = useMemo(() => new Map((basesQuery.data ?? []).map((base) => [base.id, base.name])), [basesQuery.data]);
+  const displayed = useMemo(() => filterAndSortPersonnel(employees, search, sort.key, sort.direction, baseNames), [employees, search, sort, baseNames]);
 
-  const openUserDialog = async (employee: Employee, mode: UserDialogMode) => {
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setSelectedUser(undefined);
+    setSelectedAssignment(undefined);
+    invalidate('org:employees');
+    invalidate('admin:');
+  };
+  const openDialog = async (employee: Employee, nextMode: UserDialogMode) => {
     try {
-      const response = await api.get<{ user: UserDto; credentials: unknown[] }>(`/admin/users/${employee.user.id}`);
-      setSelectedUser({ ...response.user, systemRoles: response.user.systemRoles ?? [] });
-      setUserDialogMode(mode);
-      setUserDialogOpen(true);
-    } catch (err) {
-      console.error('Failed to load user data:', err);
+      const response = await api.get<{ user: UserDto }>(`/admin/users/${employee.user.id}`);
+      const assignment = employee.assignments[0];
+      setSelectedUser(response.user);
+      setSelectedAssignment(assignment ? {
+        baseId: assignment.baseId,
+        supervisorEmployeeId: assignment.supervisorEmployeeId,
+        startsAt: assignment.startsAt,
+        track: assignment.track,
+      } : undefined);
+      setDialogMode(nextMode);
+      setDialogOpen(true);
+    } catch (error) {
+      console.error('Unable to load personnel record', error);
     }
   };
-
-  const handleUserDialogModeChange = (newMode: UserDialogMode) => {
-    setUserDialogMode(newMode);
-  };
+  const setSortKey = (key: PersonnelSortKey) => setSort((current) => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
+  const sortHeader = (label: string, key: PersonnelSortKey) => <th aria-sort={sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSortKey(key)} aria-label={`Sort by ${label}`}>{label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>;
 
   return <>
-    <PageHeader
-      title={showForm ? 'Добавление сотрудника' : 'Персонал БПО'}
-      subtitle={showForm ? 'Создание учётной записи с должностью и организационным назначением' : 'Справочник сотрудников и их текущие назначения'}
-      actions={showForm
-        ? <Link to="/admin/org/personnel" className="btn">К справочнику персонала</Link>
-        : <Link to="/admin/dictionaries/employees" className="btn btn-primary">Добавить сотрудника</Link>} />
-    {feedback && <Alert kind="success">{feedback}</Alert>}
+    <PageHeader title="Персонал БПО" subtitle="Сотрудники, должности и организационные назначения" actions={mode === 'create'
+      ? <Link to="/admin/org/personnel" className="btn">К справочнику персонала</Link>
+      : <button type="button" className="btn btn-primary" onClick={() => { setSelectedUser(undefined); setSelectedAssignment(undefined); setDialogMode('create'); setDialogOpen(true); }}><Icon name="add" small /> Добавить сотрудника</button>} />
     {(basesQuery.error || positionsQuery.error || employeesQuery.error) && <Alert>{basesQuery.error ?? positionsQuery.error ?? employeesQuery.error}</Alert>}
-    {showForm ? <form className="panel pad-lg stack" style={{ maxWidth: 900 }} onSubmit={(event) => { event.preventDefault(); setFeedback(''); create.run(); }}>
-      <h2 className="section-title">Учётная запись</h2>
-      <div className="form-grid"><TextField label="ФИО *" value={fullName} onChange={(event) => setFullName(event.target.value)} /><TextField label="Логин *" value={login} onChange={(event) => setLogin(event.target.value)} /></div>
-      <p className="muted small">Временный пароль: user12345. При первом входе сотрудник задаст новый.</p>
-      <div className="form-grid"><TextField label="Телефон" value={phone} onChange={(event) => setPhone(event.target.value)} /><TextField label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-      <h2 className="section-title">Тип персонала и должность</h2>
-      <div className="form-grid">
-        <SelectField label="Направление" value={track} onChange={(event) => { const next = event.target.value as Track; setTrack(next); setRole(next === 'TRS' ? 'EMPLOYEE' : 'SHOP_EMPLOYEE'); setPositionId(''); setSupervisorId(''); }}><option value="TRS">Полевой персонал</option><option value="R_AND_M">Цеховой персонал R&amp;M</option></SelectField>
-        <SelectField label="Роль по должности" value={role} onChange={(event) => { setRole(event.target.value); setSupervisorId(''); }}>{roleOptions.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</SelectField>
-        <SelectField label="Должность *" value={positionId} onChange={(event) => setPositionId(event.target.value)}><option value="">Выберите должность</option>{visiblePositions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectField>
-      </div>
-      <h2 className="section-title">Организационное назначение</h2>
-      <div className="form-grid">
-        <SelectField label="База *" value={baseId} onChange={(event) => { setBaseId(event.target.value); setSupervisorId(''); }}><option value="">Выберите базу</option>{(basesQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectField>
-        {requiredSupervisor && <SelectField label="Непосредственный руководитель *" value={supervisorId || (supervisors.length === 1 ? String(supervisors[0].id) : '')} onChange={(event) => setSupervisorId(event.target.value)}><option value="">Выберите руководителя</option>{supervisors.map((item) => <option key={item.id} value={item.id}>{item.user.fullName}</option>)}</SelectField>}
-        <TextField label="Дата начала назначения *" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
-      </div>
-      <ActionError error={create.error} />
-      <button className="btn btn-primary" disabled={create.pending}>{create.pending ? 'Создание…' : 'Создать сотрудника'}</button>
-    </form> : <div className="panel table-wrap"><table className="table"><thead><tr><th>Сотрудник</th><th>Тип</th><th>Должность</th><th>База</th><th>Роль</th></tr></thead><tbody>{employees.map((item) => { const assignment = item.assignments[0]; return <tr key={item.id} className="clickable" role="button" tabIndex={0} onClick={() => openUserDialog(item, 'view')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openUserDialog(item, 'view'); } }}><td>{item.user.fullName}<div className="muted small">{item.user.login}</div></td><td>{assignment?.track === 'R_AND_M' ? 'Цеховой' : assignment?.track === 'TRS' ? 'Полевой' : 'Не назначен'}</td><td>{assignment?.position?.name ?? '—'}</td><td>{basesQuery.data?.find((base) => base.id === assignment?.baseId)?.name ?? '—'}</td><td>{item.user.systemRoles.map((grant) => grant.systemRole.code).join(', ')}</td></tr>; })}</tbody></table></div>}
-    <Dialog
-      open={!!editingEmployee}
-      title="Редактирование сотрудника"
-      onClose={() => setEditingEmployee(null)}
-      onSubmit={() => editingEmployee && saveEmployee.run(editingEmployee)}
-      actions={<><button type="button" className="btn" onClick={() => setEditingEmployee(null)}>Отмена</button><button type="submit" className="btn btn-primary" disabled={saveEmployee.pending}>Сохранить</button></>}
-    >
-      <TextField label="ФИО *" value={editValues.fullName} onChange={(event) => setEditValues((current) => ({ ...current, fullName: event.target.value }))} />
-      <TextField label="Телефон" value={editValues.phone} onChange={(event) => setEditValues((current) => ({ ...current, phone: event.target.value }))} />
-      <TextField label="Email" type="email" value={editValues.email} onChange={(event) => setEditValues((current) => ({ ...current, email: event.target.value }))} />
-      <ActionError error={saveEmployee.error} />
-    </Dialog>
-    <UserFormDialog
-      open={userDialogOpen}
-      mode={userDialogMode}
-      user={selectedUser}
-      onClose={() => setUserDialogOpen(false)}
-      onModeChange={handleUserDialogModeChange}
-    />
+    <div className="panel pad row wrap" style={{ marginBottom: 12 }}>
+      <SearchInput value={search} placeholder="ФИО, логин, контакт, должность или база" onChange={setSearch} />
+      <span className="muted" aria-live="polite">{displayed.length} сотрудников</span>
+    </div>
+    <div className="panel table-wrap"><table className="table"><thead><tr>
+      {sortHeader('Сотрудник', 'name')}{sortHeader('Логин', 'login')}{sortHeader('Направление', 'track')}{sortHeader('Должность', 'position')}{sortHeader('База', 'base')}{sortHeader('Роли', 'roles')}
+    </tr></thead><tbody>{displayed.map((employee) => {
+      const assignment = employee.assignments[0];
+      return <tr key={employee.id} className="clickable" role="button" tabIndex={0} onClick={() => void openDialog(employee, 'view')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openDialog(employee, 'view'); } }}>
+        <td>{employee.user.fullName}</td><td>{employee.user.login}</td><td>{assignment?.track === 'R_AND_M' ? 'Цеховой' : assignment?.track === 'TRS' ? 'Полевой' : 'Не назначен'}</td><td>{assignment?.position?.name ?? '—'}</td><td>{assignment?.baseId ? baseNames.get(assignment.baseId) ?? '—' : '—'}</td><td>{employee.user.systemRoles.map((grant) => grant.systemRole.code).join(', ') || '—'}</td>
+      </tr>;
+    })}</tbody></table>{displayed.length === 0 && <div className="empty">Сотрудники не найдены</div>}</div>
+    <UserFormDialog open={dialogOpen} mode={dialogMode} user={selectedUser} personnel assignment={selectedAssignment} onClose={closeDialog} onModeChange={setDialogMode} />
   </>;
 }

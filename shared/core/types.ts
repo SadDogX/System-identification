@@ -1,13 +1,14 @@
-import type { Role, UiSettings, WorkDayStatus } from './schemas.ts';
+import type { SystemRoleCode } from './roles.ts';
+import type { UiSettings, WorkDayStatus } from './schemas.ts';
 import type { CredentialStatus, StatusThresholds } from './status.ts';
 
 export interface Paginated<T> { items: T[]; total: number; page: number; pageSize: number }
-export interface UserDto { id: number; fullName: string; login: string; role: Role; systemRoles: string[]; positionId: number | null; position: string | null; phone: string | null; email: string | null; photoMime: string | null; photoFile: string | null; isActive: boolean; mustChangePassword: boolean; uiSettings: UiSettings; createdAt: string }
+export interface UserDto { id: number; fullName: string; login: string; systemRoles: SystemRoleCode[]; positionId: number | null; position: string | null; phone: string | null; email: string | null; photoMime: string | null; photoFile: string | null; isActive: boolean; mustChangePassword: boolean; uiSettings: UiSettings; createdAt: string }
 export interface UserListItemDto extends UserDto { counts: Record<CredentialStatus, number> & { total: number } }
 export interface AuthResponse { accessToken: string; user: UserDto; settings: AppSettingsDto }
 export interface AppSettingsDto extends StatusThresholds { timezone: string }
 export interface CatalogItemDto { id: number; name: string; validityMonths: number; sortOrder: number; isArchived: boolean }
-export interface PositionDto { id: number; name: string; sortOrder: number; isArchived: boolean; usersCount: number }
+export interface PositionDto { id: number; name: string; systemRole: { id: number; code: SystemRoleCode; name: string; description: string; isActive: boolean }; sortOrder: number; isArchived: boolean; usersCount: number }
 export interface UserCredentialDto { id: number; userId: number; credentialId: number; name: string; validityMonths: number; number: string | null; issueDate: string | null; expiryDate: string | null; comment: string | null; isMarkedForDeletion: boolean; photoMime: string | null; status: CredentialStatus; daysLeft: number | null; updatedAt: string; user?: { id: number; fullName: string; login: string } }
 export type NotificationKind = 'EXPIRY' | 'MESSAGE' | 'DIGEST' | 'ORGANIZATION';
 export interface NotificationDto { id: number; kind: NotificationKind; level: CredentialStatus | null; title: string; body: string; link: string | null; readAt: string | null; createdAt: string }

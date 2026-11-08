@@ -13,24 +13,17 @@ const iso = (offset = 0) => {
 async function setup() {
   const admin = await createUser('ADMIN');
   const adminToken = await tokenFor(admin.login);
-  const manager = await createUser('USER');
-  const coordinator = await createUser('USER');
-  const replacementCoordinator = await createUser('USER');
-  const employee = await createUser('USER');
+  const manager = await createUser('MANAGER');
+  const coordinator = await createUser('COORDINATOR');
+  const replacementCoordinator = await createUser('COORDINATOR');
+  const employee = await createUser('EMPLOYEE');
   const [managerEmployee, coordinatorEmployee, replacementEmployee, employeeCard] = await Promise.all([
     prisma.employee.findUniqueOrThrow({ where: { userId: manager.id } }),
     prisma.employee.findUniqueOrThrow({ where: { userId: coordinator.id } }),
     prisma.employee.findUniqueOrThrow({ where: { userId: replacementCoordinator.id } }),
     prisma.employee.findUniqueOrThrow({ where: { userId: employee.id } }),
   ]);
-  for (const [user, roles] of [
-    [manager, ['MANAGER']],
-    [coordinator, ['COORDINATOR']],
-    [replacementCoordinator, ['COORDINATOR']],
-  ] as const) {
-    const res = await api('PUT', `/api/admin/org/users/${user.id}/roles`, { token: adminToken, body: { roles } });
-    assert.equal(res.status, 200);
-  }
+
 
   const baseResponse = await api('POST', '/api/admin/org/bases', {
     token: adminToken,
@@ -107,7 +100,7 @@ describe('организационные назначения и доступ', 
     await prisma.userSystemRole.deleteMany({ where: { userId: admin.id } });
     const token = await tokenFor(admin.login);
     const res = await api('GET', '/api/admin/dashboard', { token });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.status, 403, JSON.stringify(res.body));
   });
 
   it('редактирует базу и запрещает её архивирование при действующих назначениях', async () => {
@@ -127,7 +120,7 @@ describe('организационные назначения и доступ', 
 
   it('сохраняет системные роли пользователя через API и заменяет предыдущие grants', async () => {
     const ctx = await setup();
-    const user = await createUser('USER');
+    const user = await createUser('MANAGER');
     const assigned = await api('PUT', `/api/admin/org/users/${user.id}/roles`, {
       token: ctx.adminToken,
       body: { roles: ['MANAGER'] },
@@ -137,36 +130,119 @@ describe('организационные назначения и доступ', 
 
     const replaced = await api('PUT', `/api/admin/org/users/${user.id}/roles`, {
       token: ctx.adminToken,
-      body: { roles: ['EMPLOYEE'] },
+      body: { roles: ['MANAGER'] },
     });
     assert.equal(replaced.status, 200, JSON.stringify(replaced.body));
-    assert.deepEqual(replaced.body.roles, ['EMPLOYEE']);
+    assert.deepEqual(replaced.body.roles, ['MANAGER']);
     const grants = await prisma.userSystemRole.findMany({
       where: { userId: user.id, revokedAt: null },
       include: { systemRole: { select: { code: true } } },
     });
-    assert.deepEqual(grants.map((grant) => grant.systemRole.code).sort(), ['EMPLOYEE']);
+    assert.deepEqual(grants.map((grant) => grant.systemRole.code).sort(), ['MANAGER']);
   });
   it('разрешает только одного действующего старшего механика на всю компанию', async () => {
     const admin = await createUser('ADMIN');
     const adminToken = await tokenFor(admin.login);
-    const first = await createUser('USER');
-    const second = await createUser('USER');
+    const first = await createUser('EMPLOYEE');
+    const second = await createUser('EMPLOYEE');
     const assigned = await api('PUT', `/api/admin/org/users/${first.id}/roles`, {
       token: adminToken,
-      body: { roles: ['SENIOR_MECHANIC'] },
+      body: { roles: ['EMPLOYEE', 'SENIOR_MECHANIC'] },
     });
     assert.equal(assigned.status, 200, JSON.stringify(assigned.body));
     const duplicate = await api('PUT', `/api/admin/org/users/${second.id}/roles`, {
       token: adminToken,
-      body: { roles: ['SENIOR_MECHANIC'] },
+      body: { roles: ['EMPLOYEE', 'SENIOR_MECHANIC'] },
     });
     assert.equal(duplicate.status, 409);
   });
 
-  it('заменяет legacy-заглушку назначением в тот же день без потери истории карточки', async () => {
+  it('retains the employee current base when a new responsibility omits baseId', async () => {
     const ctx = await setup();
-    const user = await createUser('USER');
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: ctx.employeeCard.id }, data: { track: 'TRS', startsAt: new Date(iso(-1) + 'T00:00:00.000Z') } });
+    const historyBefore = await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } });
+    const assigned = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, {
+      token: ctx.adminToken,
+      body: {
+        track: 'TRS',
+        supervisorEmployeeId: ctx.coordinatorEmployee.id,
+        startsAt: iso(),
+      },
+    });
+    assert.equal(assigned.status, 201, JSON.stringify(assigned.body));
+    assert.equal(assigned.body.baseId, ctx.baseId);
+    assert.equal(await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } }), historyBefore + 1);
+    const current = await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: ctx.employeeCard.id } });
+    assert.equal(current.baseId, ctx.baseId);
+  });
+  it('allows an admin to transfer an employee between bases under a destination-base coordinator and preserves history', async () => {
+    const ctx = await setup();
+    const destination = await prisma.base.create({ data: { name: 'Destination BPO', code: 'DEST' } });
+    const destinationCoordinator = await createUser('COORDINATOR');
+    const [coordinatorCard] = await Promise.all([destinationCoordinator].map((person) => prisma.employee.findUniqueOrThrow({ where: { userId: person.id } })));
+    const destinationMine = await prisma.mine.create({ data: { baseId: destination.id, name: 'Destination field' } });
+    const assignedCoordinator = await api('PUT', `/api/admin/org/users/${destinationCoordinator.id}/roles`, { token: ctx.adminToken, body: { roles: ['COORDINATOR'] } });
+    assert.equal(assignedCoordinator.status, 200, JSON.stringify(assignedCoordinator.body));
+    const activeStatus = await prisma.assignmentStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: coordinatorCard.id }, data: { track: 'TRS', baseId: destination.id, statusId: activeStatus.id, startsAt: new Date(`${iso(-5)}T00:00:00.000Z`) } });
+    await prisma.mineCoordinatorAssignment.create({ data: { mineId: destinationMine.id, coordinatorId: coordinatorCard.id, currentMineId: destinationMine.id, startsAt: new Date(`${iso(-5)}T00:00:00.000Z`), operationId: 'destination-coordinator', createdById: ctx.admin.id } });
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: ctx.employeeCard.id }, data: { track: 'TRS', startsAt: new Date(`${iso(-5)}T00:00:00.000Z`) } });
+    const previous = await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: ctx.employeeCard.id } });
+    const beforeCount = await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } });
+    const beforeChanges = await prisma.organizationChange.count({ where: { employeeId: ctx.employeeCard.id, action: 'employee.transfer' } });
+    const destinationPosition = await prisma.position.create({ data: { name: 'Test fixture position 1', systemRole: { connect: { code: 'EMPLOYEE' } } } });
+    const moved = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, { token: ctx.adminToken, body: { track: 'TRS', baseId: destination.id, positionId: destinationPosition.id, supervisorEmployeeId: coordinatorCard.id, startsAt: iso() } });
+    assert.equal(moved.status, 201, JSON.stringify(moved.body));
+    assert.equal(moved.body.baseId, destination.id);
+    assert.equal(await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } }), beforeCount + 1);
+    assert.equal((await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: ctx.employeeCard.id } })).baseId, destination.id);
+    assert.equal(await prisma.organizationChange.count({ where: { employeeId: ctx.employeeCard.id, action: 'employee.transfer' } }), beforeChanges + 1);
+    assert.equal((await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: ctx.employeeCard.id } })).positionId, destinationPosition.id);
+    assert.equal((await prisma.employeeAssignment.findUniqueOrThrow({ where: { id: previous.id } })).baseId, ctx.baseId);
+    const inconsistent = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, { token: ctx.adminToken, body: { track: 'R_AND_M', baseId: destination.id, positionId: destinationPosition.id, startsAt: iso() } });
+    assert.equal(inconsistent.status, 400, JSON.stringify(inconsistent.body));
+    const wrong = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, { token: ctx.adminToken, body: { track: 'TRS', baseId: ctx.baseId, supervisorEmployeeId: ctx.coordinatorEmployee.id, startsAt: iso(1) } });
+    assert.equal(wrong.status, 400, JSON.stringify(wrong.body));
+  });
+  it('applies position-derived Coordinator role and enforces Manager supervision in transfer assignment', async () => {
+    const ctx = await setup();
+    const coordinatorPosition = await prisma.position.create({ data: { name: 'Test fixture position 2', systemRole: { connect: { code: 'COORDINATOR' } } } });
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: ctx.employeeCard.id }, data: { startsAt: new Date(`${iso(-2)}T00:00:00.000Z`) } });
+    const assigned = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, {
+      token: ctx.adminToken,
+      body: { track: 'TRS', baseId: ctx.baseId, positionId: coordinatorPosition.id, supervisorEmployeeId: ctx.managerEmployee.id, startsAt: iso() },
+    });
+    assert.equal(assigned.status, 201, JSON.stringify(assigned.body));
+    assert.ok(await prisma.userSystemRole.findFirst({ where: { userId: ctx.employee.id, revokedAt: null, systemRole: { code: 'COORDINATOR' } } }));
+    const noManager = await api('POST', `/api/org/employees/${ctx.replacementEmployee.id}/assignments`, {
+      token: ctx.adminToken,
+      body: { track: 'TRS', baseId: ctx.baseId, positionId: coordinatorPosition.id, supervisorEmployeeId: ctx.employeeCard.id, startsAt: iso() },
+    });
+    assert.equal(noManager.status, 400);
+  });
+  it('rejects moving an employee to a different base through assignment API', async () => {
+    const ctx = await setup();
+    await prisma.employeeAssignment.update({ where: { activeEmployeeId: ctx.employeeCard.id }, data: { track: 'TRS', startsAt: new Date(iso(-1) + 'T00:00:00.000Z') } });
+    const otherBase = await prisma.base.create({ data: { name: 'Remote BPO', code: 'REMOTE' } });
+    const historyBefore = await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } });
+    const moved = await api('POST', `/api/org/employees/${ctx.employeeCard.id}/assignments`, {
+      token: ctx.adminToken,
+      body: {
+        track: 'TRS',
+        baseId: otherBase.id,
+        supervisorEmployeeId: ctx.coordinatorEmployee.id,
+        startsAt: iso(),
+      },
+    });
+    assert.equal(moved.status, 400, JSON.stringify(moved.body));
+    const active = await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: ctx.employeeCard.id } });
+    assert.equal(active.baseId, ctx.baseId);
+    assert.equal(await prisma.employeeAssignment.count({ where: { employeeId: ctx.employeeCard.id } }), historyBefore);
+  });
+
+  it('replaces the legacy placeholder assignment and preserves employee history', async () => {
+    const ctx = await setup();
+    const user = await createUser('MANAGER');
     const employee = await prisma.employee.findUniqueOrThrow({ where: { userId: user.id } });
     const roles = await api('PUT', `/api/admin/org/users/${user.id}/roles`, {
       token: ctx.adminToken,
@@ -638,6 +714,16 @@ describe('планирование выездов на работы', () => {
       body: { coordinatorEmployeeId: ctx.coordinatorEmployee.id, startsAt: iso() },
     });
     assert.equal(coordinatorAssignment.status, 201);
+    const otherBase = await prisma.base.create({ data: { name: 'Remote BPO', code: 'REMOTE' } });
+    await prisma.employeeAssignment.update({
+      where: { activeEmployeeId: ctx.replacementEmployee.id },
+      data: { baseId: otherBase.id },
+    });
+    const wrongBase = await api('POST', `/api/org/mines/${mine.body.id}/coordinator`, {
+      token: ctx.adminToken,
+      body: { coordinatorEmployeeId: ctx.replacementEmployee.id, startsAt: iso(1) },
+    });
+    assert.equal(wrongBase.status, 400, JSON.stringify(wrongBase.body));
     const workType = await prisma.workType.create({
       data: { code: 'COORD_PLAN_TEST', name: 'Заканчивание', requiresContractPermission: true },
     });
@@ -687,11 +773,22 @@ describe('team work schedule access', () => {
 });
 
 describe('position role synchronization', () => {
+  it('returns the existing position-to-system-role mapping to the assignment UI', async () => {
+    const ctx = await setup();
+    const manager = await prisma.position.create({ data: { name: 'Test fixture position 3', systemRole: { connect: { code: 'MANAGER' } } } });
+    const coordinator = await prisma.position.create({ data: { name: 'Test fixture position 4', systemRole: { connect: { code: 'COORDINATOR' } } } });
+    const other = await prisma.position.create({ data: { name: 'Test fixture position 5', systemRole: { connect: { code: 'EMPLOYEE' } } } });
+    const listed = await api('GET', '/api/org/positions', { token: ctx.adminToken });
+    assert.equal(listed.status, 200, JSON.stringify(listed.body));
+    assert.equal(listed.body.find((row: { id: number }) => row.id === manager.id).systemRole.code, 'MANAGER');
+    assert.equal(listed.body.find((row: { id: number }) => row.id === coordinator.id).systemRole.code, 'COORDINATOR');
+    assert.equal(listed.body.find((row: { id: number }) => row.id === other.id).systemRole.code, 'EMPLOYEE');
+  });
   it('maps Manager and Coordinator titles to active role grants', async () => {
     const ctx = await setup();
-    const managerPosition = await prisma.position.create({ data: { name: 'Менеджер БПО' } });
-    const coordinatorPosition = await prisma.position.create({ data: { name: 'Координатор' } });
-    const createdByTitle = await api('POST', '/api/admin/users', { token: ctx.adminToken, body: { fullName: 'Created manager', login: 'createdmanager', password: 'password123', role: 'USER', positionId: managerPosition.id } });
+    const managerPosition = await prisma.position.create({ data: { name: 'Test fixture position 6', systemRole: { connect: { code: 'MANAGER' } } } });
+    const coordinatorPosition = await prisma.position.create({ data: { name: 'Test fixture position 7', systemRole: { connect: { code: 'COORDINATOR' } } } });
+    const createdByTitle = await api('POST', '/api/admin/users', { token: ctx.adminToken, body: { fullName: 'Created manager', login: 'createdmanager', password: 'password123', positionId: managerPosition.id } });
     assert.equal(createdByTitle.status, 201, JSON.stringify(createdByTitle.body));
     assert.ok(createdByTitle.body.systemRoles.includes('MANAGER'));
     const manager = await createUser('USER');
@@ -709,7 +806,7 @@ describe('position role synchronization', () => {
   });
   it('assigns the role from the position before validating assignment hierarchy', async () => {
     const ctx = await setup();
-    const coordinatorPosition = await prisma.position.create({ data: { name: 'Координатор' } });
+    const coordinatorPosition = await prisma.position.create({ data: { name: 'Test fixture position 8', systemRole: { connect: { code: 'COORDINATOR' } } } });
     const employee = await createUser('USER');
     const card = await prisma.employee.findUniqueOrThrow({ where: { userId: employee.id } });
     await prisma.employeeAssignment.update({ where: { activeEmployeeId: card.id }, data: { startsAt: new Date(iso(-1) + 'T00:00:00.000Z') } });

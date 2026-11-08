@@ -35,11 +35,12 @@ export function ProfileMenu() {
           <div className="popover-head" style={{ display: 'block' }}>
             <div className="bold">{user.fullName}</div>
             <div className="muted small">
-              {ROLE_LABELS[user.role]} · {user.login}<><br></br></>
-              {user.position}
+              {ROLE_LABELS[user.systemRoles[0] ?? 'EMPLOYEE']} · {user.login}
+              <br></br>
+              <b>{user.position}</b>
             </div>
           </div>
-          {user.role === 'USER' && (
+          {!user.systemRoles.includes('ADMIN') && (
             <button type="button" className="menu-item" onClick={() => openRoute('/user/profile')}>
               Профиль
             </button>

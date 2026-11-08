@@ -1,10 +1,8 @@
-import type { Role } from '@prisma/client';
 import { config } from '../../core/config.ts';
 import { signJwt, verifyJwt } from '../../core/jwt.ts';
 
 export interface AccessPayload {
   sub: number;
-  role: Role;
   ver: number;
 }
 
@@ -13,8 +11,8 @@ interface RefreshPayload {
   ver: number;
 }
 
-export function signAccessToken(user: { id: number; role: Role; tokenVersion: number }): string {
-  const payload: AccessPayload = { sub: user.id, role: user.role, ver: user.tokenVersion };
+export function signAccessToken(user: { id: number; tokenVersion: number }): string {
+  const payload: AccessPayload = { sub: user.id, ver: user.tokenVersion };
   return signJwt(payload, config.jwtAccessSecret, config.accessTokenTtlSeconds);
 }
 

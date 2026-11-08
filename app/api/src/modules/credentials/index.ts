@@ -14,7 +14,7 @@ const admin = Router();
 admin.use(...signedIn, h(async (req, _res, next) => {
   const user = currentUser(req);
   const roles = await systemRoleCodes(user.id);
-  if (user.role !== 'ADMIN' && !roles.some((role) => ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC', 'MECHANIC', 'SHOP_FOREMAN'].includes(role))) throw forbidden();
+  if (!user.systemRoles.some((grant) => grant.systemRole.code === 'ADMIN') && !roles.some((role) => ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC', 'MECHANIC', 'SHOP_FOREMAN'].includes(role))) throw forbidden();
   next();
 }));
 admin.get('/', validate(credentialListQuerySchema, 'query'), h(credentials.list));

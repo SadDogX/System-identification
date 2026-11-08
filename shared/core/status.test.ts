@@ -91,18 +91,18 @@ describe('валидация', () => {
       fullName: '  Иванов Иван ',
       login: 'ivanov',
       password: 'password1',
-      role: 'USER',
+      positionId: 1,
       phone: '',
       isAdmin: true,
     });
     assert.ok(r.ok);
-    assert.deepEqual(r.value, { fullName: 'Иванов Иван', login: 'ivanov', password: 'password1', role: 'USER', phone: null });
+    assert.deepEqual(r.value, { fullName: 'Иванов Иван', login: 'ivanov', password: 'password1', positionId: 1, phone: null });
   });
 
   it('собирает сообщения по полям', () => {
-    const r = parse(createUserSchema, { fullName: '', login: 'и', password: '123', role: 'ROOT', email: 'x' });
+    const r = parse(createUserSchema, { fullName: '', login: 'и', password: '123', positionId: 0, email: 'x' });
     assert.ok(!r.ok);
-    assert.deepEqual(Object.keys(r.issues).sort(), ['email', 'fullName', 'login', 'password', 'role']);
+    assert.deepEqual(Object.keys(r.issues).sort(), ['email', 'fullName', 'login', 'password', 'positionId']);
   });
 
   it('проверка всего объекта', () => {

@@ -36,7 +36,7 @@ export async function ensureUserCredentials(tx: Tx, userId: number) {
 
 /** Создаёт пустую запись позиции справочника всем сотрудникам. */
 export async function backfillCatalogItem(tx: Tx, credentialId: number) {
-  const users = await tx.user.findMany({ where: { role: 'USER', isDeleted: false }, select: { id: true } });
+  const users = await tx.user.findMany({ where: { isDeleted: false }, select: { id: true } });
   if (users.length === 0) return;
   await tx.userCredential.createMany({
     data: users.map((u) => ({ userId: u.id, credentialId })),

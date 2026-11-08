@@ -1,5 +1,6 @@
 import { isIsoDate } from './dates.ts';
 import { CREDENTIAL_STATUSES } from './status.ts';
+import { SYSTEM_ROLE_CODES, type SystemRoleCode } from './roles.ts';
 import {
   bool,
   int,
@@ -15,8 +16,6 @@ import {
   type Infer,
 } from './validation.ts';
 
-export const ROLES = ['ADMIN', 'USER'] as const;
-export type Role = (typeof ROLES)[number];
 
 export const isoDate = matches(
   (v): v is string => typeof v === 'string' && isIsoDate(v),
@@ -58,8 +57,7 @@ export const createUserSchema = object({
   fullName: text({ max: 200, message: 'Укажите ФИО' }),
   login: loginField,
   password: passwordSchema,
-  role: oneOf(ROLES),
-  positionId: optionalId(),
+  positionId: int({ min: 1 }),
   phone: optionalText(50),
   email: optionalEmail,
 });
@@ -67,9 +65,8 @@ export type CreateUserRequest = Infer<typeof createUserSchema>;
 
 export const updateUserSchema = object({
   fullName: optional(text({ max: 200, message: 'Укажите ФИО' })),
-  role: optional(oneOf(ROLES)),
   isActive: optional(bool()),
-  positionId: optionalId(),
+  positionId: optional(int({ min: 1 })),
   phone: optionalText(50),
   email: optionalEmail,
 });
@@ -95,7 +92,7 @@ export const uiSettingsSchema = object({
 });
 export type UiSettings = Infer<typeof uiSettingsSchema>;
 
-export const USER_LIST_FILTERS = ['all', 'USER', 'ADMIN', 'hasRed', 'hasYellow', 'hasWhite'] as const;
+export const USER_LIST_FILTERS = ['all', 'hasRed', 'hasYellow', 'hasWhite'] as const;
 
 export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
 export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
@@ -122,7 +119,8 @@ export const catalogItemSchema = object({
 export type CatalogItemRequest = Infer<typeof catalogItemSchema>;
 
 export const positionSchema = object({
-  name: text({ max: 150, message: 'Укажите название должности' }),
+  name: text({ max: 150, message: '??????? ???????? ?????????' }),
+  systemRoleId: int({ min: 1 }),
   sortOrder: int({ min: 0, default: 0 }),
 });
 export type PositionRequest = Infer<typeof positionSchema>;

@@ -17,7 +17,7 @@ export async function getOverview(actor: User, query: { q?: string; positionId?:
     }),
     prisma.user.findMany({
       where: {
-        role: 'USER',
+        
         isDeleted: false,
         ...(userIds.length && { id: { in: userIds } }),
         ...(query.q && { fullName: { contains: query.q } }),

@@ -18,12 +18,10 @@ import { hashPassword } from '../auth/auth.service.ts';
 import { ensureUserCredentials } from '../credentials/credentials.service.ts';
 import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
-import { ensureEmployeeAndLegacyRole, syncLegacySystemRole, updateEmployeePosition } from '../organization/organization.service.ts';
-import { syncPositionSystemRole } from '../organization/positionRoles.ts';
+import { ensureEmployeeAndLegacyRole, updateEmployeePosition } from '../organization/organization.service.ts';
 
-const PROFILE_FIELDS = ['fullName', 'role', 'positionId', 'phone', 'email', 'isActive'] as const;
-/** В журнал пишем название должности, а не её id. */
-const AUDIT_FIELDS = ['fullName', 'login', 'role', 'position', 'phone', 'email', 'isActive'];
+const PROFILE_FIELDS = ['fullName', 'positionId', 'phone', 'email', 'isActive'] as const;
+const AUDIT_FIELDS = ['fullName', 'login', 'position', 'phone', 'email', 'isActive'];
 const auditView = (u: UserWithPosition) => ({ ...u, position: u.position?.name ?? null });
 
 async function assertPosition(positionId: number | null | undefined) {
@@ -39,14 +37,14 @@ async function findActiveUser(id: number): Promise<UserWithPosition> {
   return user;
 }
 
-async function assertNotLastAdmin(userId: number) {
-  const otherAdmins = await prisma.user.count({
-    where: { role: 'ADMIN', isDeleted: false, isActive: true, id: { not: userId } },
-  });
-  if (otherAdmins === 0) throw badRequest('Нельзя убрать последнего активного администратора');
+async function hasAdminGrant(userId: number) {
+  return !!(await prisma.userSystemRole.findFirst({ where: { userId, revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } }, select: { id: true } }));
 }
 
-// ---------- Список ----------
+async function assertNotLastAdmin(userId: number) {
+  const otherAdmins = await prisma.userSystemRole.count({ where: { userId: { not: userId }, revokedAt: null, user: { isDeleted: false, isActive: true }, systemRole: { code: 'ADMIN', isActive: true } } });
+  if (otherAdmins === 0) throw badRequest('?????? ?????? ?????????? ??????????????');
+}
 
 interface ListQuery {
   q?: string;
@@ -68,10 +66,7 @@ export async function list(query: ListQuery): Promise<Paginated<UserListItemDto>
     },
   });
   const filterWhere: Record<NonNullable<ListQuery['filter']>, Prisma.UserWhereInput> = {
-    all: {},
-    USER: { role: 'USER' },
-    ADMIN: { role: 'ADMIN' },
-    hasRed: hasStatus('RED'),
+    all: {},    hasRed: hasStatus('RED'),
     hasYellow: hasStatus('YELLOW'),
     hasWhite: hasStatus('WHITE'),
   };
@@ -126,7 +121,7 @@ export async function list(query: ListQuery): Promise<Paginated<UserListItemDto>
 /** Короткий список для выбора получателя сообщения. */
 export async function listOptions() {
   return prisma.user.findMany({
-    where: { isDeleted: false, isActive: true, role: 'USER' },
+    where: { isDeleted: false, isActive: true },
     select: { id: true, fullName: true, login: true },
     orderBy: { fullName: 'asc' },
   });
@@ -180,9 +175,7 @@ export async function create(actor: User, input: CreateUserRequest) {
       data: {
         fullName: input.fullName,
         login: input.login,
-        passwordHash,
-        role: input.role,
-        positionId: input.positionId ?? null,
+        passwordHash,        positionId: input.positionId,
         phone: input.phone ?? null,
         email: input.email ?? null,
         mustChangePassword: true,
@@ -190,9 +183,7 @@ export async function create(actor: User, input: CreateUserRequest) {
       include: withPosition,
     });
     await ensureEmployeeAndLegacyRole(tx, created, actor.id);
-    if (created.role !== 'ADMIN') await syncPositionSystemRole(tx, created.id, null, created.position?.name, actor.id);
-    if (created.role === 'USER') await ensureUserCredentials(tx, created.id);
-    await audit(tx, {
+    await ensureUserCredentials(tx, created.id);    await audit(tx, {
       actorId: actor.id,
       action: 'user.create',
       entityType: 'User',
@@ -207,58 +198,25 @@ export async function create(actor: User, input: CreateUserRequest) {
 
 export async function update(actor: User, id: number, input: UpdateUserRequest) {
   const existing = await findActiveUser(id);
-  const isSelf = actor.id === id;
-
-  if (isSelf && input.role !== undefined && input.role !== existing.role) {
-    throw badRequest('Нельзя изменить собственную роль');
-  }
-  if (isSelf && input.isActive === false) throw badRequest('Нельзя заблокировать самого себя');
-  const losesAdmin =
-    existing.role === 'ADMIN' && ((input.role && input.role !== 'ADMIN') || input.isActive === false);
-  if (losesAdmin) await assertNotLastAdmin(id);
+  if (actor.id === id && input.isActive === false) throw badRequest('?????? ????????????? ?????? ????');
+  if ((await hasAdminGrant(id)) && input.isActive === false) await assertNotLastAdmin(id);
   await assertPosition(input.positionId);
-
   const data: Prisma.UserUncheckedUpdateInput = {};
-  for (const field of PROFILE_FIELDS) {
-    if (input[field] !== undefined) (data as Record<string, unknown>)[field] = input[field];
-  }
-  // Смена роли или блокировка — старые токены перестают работать сразу
-  const revokeTokens =
-    (input.role !== undefined && input.role !== existing.role) ||
-    (input.isActive !== undefined && input.isActive !== existing.isActive);
-  if (revokeTokens) data.tokenVersion = { increment: 1 };
-
-  const user = await prisma.$transaction(async (tx) => {
+  for (const field of PROFILE_FIELDS) if (input[field] !== undefined) (data as Record<string, unknown>)[field] = input[field];
+  if (input.isActive !== undefined && input.isActive !== existing.isActive) data.tokenVersion = { increment: 1 };
+  await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({ where: { id }, data, include: withPosition });
-    if (input.role !== undefined && input.role !== existing.role) {
-      await syncLegacySystemRole(tx, updated, actor.id);
-    }
-    if (input.positionId !== undefined && input.positionId !== existing.positionId) {
-      await updateEmployeePosition(tx, updated, input.positionId, actor.id);
-    } else if (input.positionId !== undefined && input.positionId !== null) {
-      const position = await tx.position.findUnique({ where: { id: input.positionId }, select: { name: true } });
-      const { syncPositionSystemRole } = await import('../organization/positionRoles.ts');
-      await syncPositionSystemRole(tx, id, null, position?.name, actor.id);
-    }
-    if (updated.role === 'USER') await ensureUserCredentials(tx, id);
-    await audit(tx, {
-      actorId: actor.id,
-      action: 'user.update',
-      entityType: 'User',
-      entityId: id,
-      targetUserId: id,
-      diff: diffOf(auditView(existing), auditView(updated), AUDIT_FIELDS),
-    });
-    return updated;
+    if (input.positionId !== undefined && input.positionId !== existing.positionId) await updateEmployeePosition(tx, updated, input.positionId, actor.id);
+    await ensureUserCredentials(tx, id);
+    await audit(tx, { actorId: actor.id, action: 'user.update', entityType: 'User', entityId: id, targetUserId: id, diff: diffOf(auditView(existing), auditView(updated), AUDIT_FIELDS) });
   });
   return toUserDto(await prisma.user.findUniqueOrThrow({ where: { id }, include: withPosition }));
 }
 
-/** Мягкое удаление: пользователь пропадает из списков, данные и история остаются. */
 export async function softDelete(actor: User, id: number) {
   const existing = await findActiveUser(id);
   if (actor.id === id) throw badRequest('Нельзя удалить самого себя');
-  if (existing.role === 'ADMIN') await assertNotLastAdmin(id);
+  if (await hasAdminGrant(id)) await assertNotLastAdmin(id);
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
       where: { id },

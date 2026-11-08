@@ -1,8 +1,9 @@
 import { execSync } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import type { Role } from '@prisma/client';
+import type { SystemRoleCode } from '@app/shared';
 import { createApp } from '../src/app.ts';
+
 import { prisma } from '../src/core/db.ts';
 import { hashPassword } from '../src/core/password.ts';
 import { ensureEmployeeAndLegacyRole, initializeOrganizationCatalog } from '../src/modules/organization/organization.service.ts';
@@ -66,6 +67,7 @@ export async function resetDb() {
   await prisma.message.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.customerSiteWork.deleteMany();
+  await prisma.plannedWork.deleteMany();
   await prisma.workAssignmentResponsible.deleteMany();
   await prisma.workAssignment.deleteMany();
   await prisma.workExecutionResponsible.deleteMany();
@@ -90,22 +92,20 @@ export async function resetDb() {
   await prisma.user.deleteMany();
   await prisma.position.deleteMany();
   await prisma.setting.deleteMany();
+  await initializeOrganizationCatalog();
 }
 
 let counter = 0;
 
-export async function createUser(role: Role = 'USER', overrides: { isActive?: boolean } = {}) {
+export async function createUser(role: SystemRoleCode | 'USER' = 'USER', overrides: { isActive?: boolean } = {}) {
   counter += 1;
-  const user = await prisma.user.create({
-    data: {
-      fullName: `${role === 'ADMIN' ? 'Админ' : 'Сотрудник'} ${counter}`,
-      login: `${role.toLowerCase()}${counter}`,
-      passwordHash,
-      role,
-      mustChangePassword: false,
-      ...overrides,
-    },
+  const code: SystemRoleCode = role === 'USER' ? 'EMPLOYEE' : role;
+  const position = await prisma.position.upsert({
+    where: { name: `Test ${code} position` },
+    update: { systemRole: { connect: { code } } },
+    create: { name: `Test ${code} position`, systemRole: { connect: { code } } },
   });
+  const user = await prisma.user.create({ data: { fullName: 'Test user ' + counter, login: role.toLowerCase() + counter, passwordHash, positionId: position.id, mustChangePassword: false, ...overrides } });
   await prisma.$transaction((tx) => ensureEmployeeAndLegacyRole(tx, user));
   return user;
 }

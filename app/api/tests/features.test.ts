@@ -118,15 +118,15 @@ describe('фото удостоверения', () => {
 describe('должности и сводная таблица', () => {
   it('справочник должностей, уникальность, назначение, журнал с названием', async () => {
     const { adminToken } = await setup();
-    const pos = await api('POST', '/api/admin/positions', { token: adminToken, body: { name: 'Сварщик' } });
+    const pos = await api('POST', '/api/admin/positions', { token: adminToken, body: { name: 'Temporary welder position', systemRoleId: (await prisma.systemRole.findUniqueOrThrow({ where: { code: 'EMPLOYEE' } })).id } });
     assert.equal(pos.status, 201);
-    assert.equal((await api('POST', '/api/admin/positions', { token: adminToken, body: { name: 'Сварщик' } })).status, 409);
+    assert.equal((await api('POST', '/api/admin/positions', { token: adminToken, body: { name: 'Temporary welder position', systemRoleId: (await prisma.systemRole.findUniqueOrThrow({ where: { code: 'EMPLOYEE' } })).id } })).status, 409);
 
     const user = await createUser('USER');
     const upd = await api('PATCH', `/api/admin/users/${user.id}`, { token: adminToken, body: { positionId: pos.body.id } });
-    assert.equal(upd.body.position, 'Сварщик');
+    assert.equal(upd.body.position, 'Temporary welder position');
     const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'user.update', targetUserId: user.id } });
-    assert.deepEqual((log.diff as Record<string, unknown>).position, { from: null, to: 'Сварщик' });
+    assert.deepEqual((log.diff as Record<string, unknown>).position, { from: 'Test EMPLOYEE position', to: 'Temporary welder position' });
 
     assert.equal((await api('PATCH', `/api/admin/users/${user.id}`, { token: adminToken, body: { positionId: 99999 } })).status, 400);
     const list = await api('GET', '/api/admin/positions', { token: adminToken });

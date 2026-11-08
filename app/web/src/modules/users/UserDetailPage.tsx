@@ -27,9 +27,9 @@ export function UserDetailPage({ id }: { id: number }) {
     </div>
     <PageHeader
       title={user.fullName}
-      subtitle={`${ROLE_LABELS[user.role]} · ${user.login}`}
+      subtitle={`${user.position ?? ROLE_LABELS[user.systemRoles[0] ?? 'EMPLOYEE']} · ${user.login}`}
       actions={<>
-        {user.role === 'USER' && user.isActive &&
+        {!user.systemRoles.includes('ADMIN') && user.isActive &&
           <button type="button"
             className={`btn ${attention.length ? (anyRed ? 'btn-danger' : 'btn-warning') : 'btn-outline'}`}
             onClick={writeMessage}>
@@ -55,7 +55,7 @@ export function UserDetailPage({ id }: { id: number }) {
         </div>
       </div>
     </div>
-    {user.role === 'USER' &&
+    {!user.systemRoles.includes('ADMIN') &&
       <>
         <div className="row between mb"><h2 style={{ fontSize: 18, fontWeight: 600 }}>Удостоверения</h2><ViewToggle value={mode} onChange={setMode} hidden={isMobile} /></div>
         <CredentialView
@@ -65,7 +65,7 @@ export function UserDetailPage({ id }: { id: number }) {
           emptyText="Справочник удостоверений пуст" />
       </>}
     {dialogs}
-    <UserFormDialog open={editOpen} mode="edit" user={user} systemRoles={user.systemRoles} onClose={() => setEditOpen(false)} />
+    <UserFormDialog open={editOpen} mode="edit" user={user} onClose={() => setEditOpen(false)} />
     <ConfirmDialog
       open={deleteOpen}
       title="Удалить пользователя?"

@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { api, errorMessage } from '../../core/api.ts';
+import type { PositionDto } from '@app/shared';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, Icon, PageHeader, SelectField, TextField } from '@app/shared/ui';
 import { ActionError } from '../../widgets/feedback/ActionError';
 
 interface Base { id: number; name: string; code: string | null }
-interface Position { id: number; name: string }
+interface Position extends PositionDto {}
 interface SystemRole { id: number; code: string; name: string; isActive: boolean }
 interface Employee {
   id: number;
@@ -44,7 +45,7 @@ type OrganizationView = 'overview' | 'structure' | 'assignments' | 'transfers';
 
 export function OrganizationPage({ view = 'overview' }: { view?: OrganizationView }) {
   const user = useCurrentUser();
-  const isAdmin = user.role === 'ADMIN';
+  const isAdmin = user.systemRoles.includes('ADMIN');
   const [assignmentTab, setAssignmentTab] = useState<'assignment' | 'transfer'>(view === 'transfers' ? 'transfer' : 'assignment');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedBaseId, setSelectedBaseId] = useState('');
@@ -74,19 +75,21 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
   const signedInEmployee = employees.find((employee) => employee.user.id === user.id);
   const signedInRoleCodes = signedInEmployee?.user.systemRoles.map((grant) => grant.systemRole.code) ?? [];
   const isManager = signedInRoleCodes.includes('MANAGER');
+  const isTransfer = view === 'transfers' || assignmentTab === 'transfer';
   const selectedEmployee = employees.find((employee) => String(employee.id) === selectedEmployeeId);
   const currentAssignment = selectedEmployee?.assignments[0];
-  const roleForForm = isAdmin
-    ? selectedRole
-    : selectedEmployee?.user.systemRoles.find((grant) => grant.systemRole.code !== 'EMPLOYEE' && grant.systemRole.code !== 'ADMIN')?.systemRole.code ?? 'EMPLOYEE';
-  const supervisorRole = roleForForm === 'COORDINATOR' ? 'MANAGER' : roleForForm === 'EMPLOYEE' ? 'COORDINATOR' : roleForForm === 'MECHANIC' ? 'SENIOR_MECHANIC' : roleForForm === 'SHOP_EMPLOYEE' ? 'SHOP_FOREMAN' : roleForForm === 'SHOP_FOREMAN' ? 'MECHANIC' : '';
-  const supervisors = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === supervisorRole));
+  const roleForForm: string = positions.find((position) => String(position.id) === selectedPositionId)?.systemRole.code ?? 'EMPLOYEE';
+  const destinationBaseId = isTransfer ? selectedBaseId : currentAssignment?.baseId ? String(currentAssignment.baseId) : '';
+  const supervisorRole = roleForForm === 'COORDINATOR' ? 'MANAGER' : roleForForm === 'EMPLOYEE' ? 'COORDINATOR' : '';
+  const supervisors = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === supervisorRole) && employee.assignments[0]?.track === trackFor(roleForForm) && employee.assignments[0]?.baseId === (destinationBaseId ? Number(destinationBaseId) : null));
+  const transferCoordinators = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === 'COORDINATOR') && employee.assignments[0]?.track === 'TRS' && employee.assignments[0]?.baseId === Number(selectedBaseId));
   const minesQuery = useQuery('org:mines', () => api.get<Mine[]>('/org/mines'));
   const mines = minesQuery.data ?? [];
   const coordinators = employees.filter((employee) => employee.user.systemRoles.some((grant) => grant.systemRole.code === 'COORDINATOR'));
+  const coordinatorsForMine = (mine: Mine) => coordinators.filter((employee) => employee.assignments[0]?.track === 'TRS' && employee.assignments[0]?.baseId === mine.baseId);
   const showStructure = view === 'overview' || view === 'structure';
   const showAssignmentForm = view === 'overview' || view === 'assignments' || view === 'transfers';
-  const isTransfer = view === 'transfers' || assignmentTab === 'transfer';
+
 
   const refresh = () => {
     invalidate('org:');
@@ -120,17 +123,13 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
       onSuccess: refresh,
     });
   const assignEmployee = useAction(async () => {
-    if (!selectedEmployee) throw new Error('Выберите сотрудника');
-    const roleCodes = isAdmin
-      ? [selectedRole]
-      : selectedEmployee.user.systemRoles.map((grant) => grant.systemRole.code);
-
-    if (isAdmin) {
-      await api.put(`/admin/org/users/${selectedEmployee.user.id}/roles`, { roles: roleCodes });
-    }
+    if (!selectedEmployee) throw new Error("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0430");
+    if (isTransfer && isAdmin && !selectedBaseId) throw new Error("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0431\u0430\u0437\u0443 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f");
+    if (isTransfer && !transferCoordinators.some((employee) => String(employee.id) === selectedSupervisorId)) throw new Error("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u043e\u0440\u0430 \u043f\u0440\u0438\u043d\u0438\u043c\u0430\u044e\u0449\u0435\u0439 \u0431\u0430\u0437\u044b");
+    const destinationId = isTransfer || currentAssignment?.track === 'UNASSIGNED' ? (destinationBaseId ? Number(destinationBaseId) : null) : undefined;
     return api.post(`/org/employees/${selectedEmployee.id}/assignments`, {
       track: trackFor(roleForForm),
-      baseId: selectedBaseId ? Number(selectedBaseId) : null,
+      ...(destinationId !== undefined && { baseId: destinationId }),
       positionId: selectedPositionId ? Number(selectedPositionId) : null,
       supervisorEmployeeId: selectedSupervisorId ? Number(selectedSupervisorId) : null,
       startsAt,
@@ -224,7 +223,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                 setSelectedEmployeeId(event.target.value);
                 const employee = employees.find((item) => String(item.id) === event.target.value);
                 const assignment = employee?.assignments[0];
-                setSelectedBaseId(assignment?.baseId ? String(assignment.baseId) : (bases[0] ? String(bases[0].id) : ''));
+                setSelectedBaseId(assignment?.baseId ? String(assignment.baseId) : '');
                 setSelectedPositionId(assignment?.positionId ? String(assignment.positionId) : '');
                 setSelectedSupervisorId(assignment?.supervisorEmployeeId ? String(assignment.supervisorEmployeeId) : '');
                 if (isAdmin) setSelectedRole(employee?.user.systemRoles[0]?.systemRole.code ?? 'EMPLOYEE');
@@ -232,23 +231,22 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                 <option value="">Выберите сотрудника</option>
                 {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.user.fullName} · {employee.user.login}</option>)}
               </SelectField>
-              {isAdmin && <SelectField label="Роль" value={selectedRole} onChange={(event) => {
-                setSelectedRole(event.target.value);
-                setSelectedSupervisorId('');
-              }}>
-                {roles.filter((role) => role.code !== 'ADMIN').map((role) => <option key={role.code} value={role.code}>{role.name}</option>)}
+              {isAdmin && isTransfer && <SelectField label="Base *" value={selectedBaseId} onChange={(event) => { setSelectedBaseId(event.target.value); setSelectedSupervisorId(''); }}>
+                <option value="">Выберите базу назначения</option>
+                {bases.map((base) => <option key={base.id} value={base.id}>{base.name}</option>)}
               </SelectField>}
-              <SelectField label="База" value={selectedBaseId} onChange={(event) => setSelectedBaseId(event.target.value)}>
-                <option value="">Не назначена</option>
-                {bases.map((base) => <option key={base.id} value={base.id}>{base.name} ({base.code})</option>)}
-              </SelectField>
+              {selectedEmployee && !isTransfer && <span className="muted">Current base: {currentAssignment?.base?.name ?? 'not set'}</span>}
               <SelectField label="Должность" value={selectedPositionId} onChange={(event) => setSelectedPositionId(event.target.value)}>
                 <option value="">Не указана</option>
                 {positions.map((position) => <option key={position.id} value={position.id}>{position.name}</option>)}
               </SelectField>
-              {supervisorRole && <SelectField label="Непосредственный руководитель" value={selectedSupervisorId} onChange={(event) => setSelectedSupervisorId(event.target.value)}>
-                <option value="">Выберите руководителя</option>
+              {!isTransfer && supervisorRole && <SelectField label={"\u041d\u0435\u043f\u043e\u0441\u0440\u0435\u0434\u0441\u0442\u0432\u0435\u043d\u043d\u044b\u0439 \u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c"} value={selectedSupervisorId} onChange={(event) => setSelectedSupervisorId(event.target.value)}>
+                <option value="">{"\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f"}</option>
                 {supervisors.map((employee) => <option key={employee.id} value={employee.id}>{employee.user.fullName}</option>)}
+              </SelectField>}
+              {isTransfer && <SelectField label={"\u041a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u043e\u0440 \u043f\u0440\u0438\u043d\u0438\u043c\u0430\u044e\u0449\u0435\u0439 \u0431\u0430\u0437\u044b *"} value={selectedSupervisorId} disabled={!selectedBaseId} onChange={(event) => setSelectedSupervisorId(event.target.value)}>
+                <option value="">{"\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u043e\u0440\u0430 \u0431\u0430\u0437\u044b"}</option>
+                {transferCoordinators.map((employee) => <option key={employee.id} value={employee.id}>{employee.user.fullName}</option>)}
               </SelectField>}
               <TextField label="Дата начала" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
               <TextField label={isTransfer ? 'Причина перевода' : 'Причина назначения или перевода'} value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -258,8 +256,9 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
                   assignEmployee.pending ||
                   !selectedEmployeeId ||
                   !startsAt ||
-                  (roleForForm !== 'SENIOR_MECHANIC' && !selectedBaseId) ||
-                  (!!supervisorRole && !selectedSupervisorId)
+                  (!destinationBaseId) ||
+                  (!!supervisorRole && !isTransfer && !selectedSupervisorId) ||
+                  (isTransfer && !selectedSupervisorId)
                 }
               >
                 <Icon name="doneAll" small /> {isTransfer ? 'Оформить перевод' : 'Сохранить назначение'}
@@ -280,7 +279,7 @@ export function OrganizationPage({ view = 'overview' }: { view?: OrganizationVie
               key={mine.id}
               mine={mine}
               canManage={isAdmin || isManager}
-              coordinators={coordinators}
+              coordinators={coordinatorsForMine(mine)}
               selectedCoordinatorId={coordinatorByMine[mine.id] ?? ''}
               startsAt={transferDateByMine[mine.id] ?? today()}
               onCoordinatorChange={(value) => setCoordinatorByMine((state) => ({ ...state, [mine.id]: value }))}
@@ -367,6 +366,6 @@ function MineRow({
       {coordinators.map((coordinator) => <option key={coordinator.id} value={coordinator.id}>{coordinator.user.fullName}</option>)}
     </SelectField>}
     {canManage && <TextField label="Дата назначения" type="date" value={startsAt} onChange={(event) => onDateChange(event.target.value)} />}
-    {canManage && <button type="button" className="btn" disabled={pending || !selectedCoordinatorId} onClick={onAssign}>Назначить координатора</button>}
+    {canManage && <button type="button" className="btn" disabled={pending || !coordinators.some((coordinator) => String(coordinator.id) === selectedCoordinatorId)} onClick={onAssign}>Назначить координатора</button>}
   </div>;
 }

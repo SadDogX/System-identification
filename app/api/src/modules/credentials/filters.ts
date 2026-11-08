@@ -9,7 +9,7 @@ import { toDbDate } from '../../core/dates.ts';
 export const visibleCredentialWhere: Prisma.UserCredentialWhereInput = {
   isMarkedForDeletion: false,
   credential: { isArchived: false },
-  user: { isDeleted: false, role: 'USER' },
+  user: { isDeleted: false },
 };
 
 /** Условие на дату окончания для статуса. Статус в БД не хранится — он зависит от текущей даты. */

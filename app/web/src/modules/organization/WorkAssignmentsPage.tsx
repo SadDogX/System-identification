@@ -47,7 +47,7 @@ const dateLabel = (value: string) => value.slice(0, 10).split('-').reverse().joi
 
 export function WorkAssignmentsPage() {
   const user = useCurrentUser();
-  const isAdmin = user.role === 'ADMIN';
+  const isAdmin = user.systemRoles.includes('ADMIN');
   const selfQuery = useQuery('org:work-assignments:self', () => api.get<EmployeeSelf>(`/org/users/${user.id}/employee`));
   const roles = selfQuery.data?.user.systemRoles.map((grant) => grant.systemRole.code) ?? user.systemRoles;
   const canManage = isAdmin || roles.includes('MANAGER') || roles.includes('COORDINATOR');

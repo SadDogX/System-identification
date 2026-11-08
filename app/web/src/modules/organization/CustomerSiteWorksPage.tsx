@@ -25,7 +25,7 @@ const dateLabel = (date: string) => date.slice(0, 10).split('-').reverse().join(
 
 export function CustomerSiteWorksPage() {
   const user = useCurrentUser();
-  const isAdmin = user.role === 'ADMIN';
+  const isAdmin = user.systemRoles.includes('ADMIN');
   const self = useQuery('org:site-work:self', () => api.get<{ user: { systemRoles: { systemRole: { code: string } }[] } }>(`/org/users/${user.id}/employee`));
   const roles = self.data?.user.systemRoles.map((role) => role.systemRole.code) ?? user.systemRoles;
   const canView = isAdmin || roles.includes('COORDINATOR');

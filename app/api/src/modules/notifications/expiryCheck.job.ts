@@ -9,7 +9,7 @@ const TICK_MS = 10 * 60 * 1000;
 export async function runExpiryCheck() {
   const created = await checkExpiryNotifications();
   const emails = await sendAdminEmailDigest();
-  const blocked = await prisma.user.updateMany({ where: { role: 'USER', isDeleted: false, isActive: true, credentials: { some: { expiryDate: { lte: new Date(Date.now() - 7 * 86400000), not: null }, isMarkedForDeletion: false } } }, data: { isActive: false, tokenVersion: { increment: 1 } } });
+  const blocked = await prisma.user.updateMany({ where: { isDeleted: false, isActive: true, credentials: { some: { expiryDate: { lte: new Date(Date.now() - 7 * 86400000), not: null }, isMarkedForDeletion: false } } }, data: { isActive: false, tokenVersion: { increment: 1 } } });
   logger.info(`Проверка сроков: уведомлений ${created}, писем ${emails}, автоблокировано ${blocked.count}`);
 }
 

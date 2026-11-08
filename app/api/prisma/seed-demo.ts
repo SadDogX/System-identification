@@ -72,24 +72,53 @@ const EMPLOYEES: {
   { fullName: 'Борисов Арсений Павлович', login: 'demo_shop_astr_4', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_2' },
   { fullName: 'Власов Тимур Олегович', login: 'demo_shop_nzv_5', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_1' },
   { fullName: 'Голубев Аркадий Максимович', login: 'demo_shop_astr_5', position: 'Слесарь', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_1' },
+  { fullName: 'Titon Alexey Sergeevich', login: 'demo_extra_01', position: 'Technician drilling', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_1' },
+  { fullName: 'Fomina Elena Pavlovna', login: 'demo_extra_02', position: 'Drilling Engineer', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_2' },
+  { fullName: 'Gromov Dmitry Andreevich', login: 'demo_extra_03', position: 'Technician drilling 2', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_1' },
+  { fullName: 'Zaitseva Marina Igorevna', login: 'demo_extra_04', position: 'Drilling Engineer 1', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_2' },
+  { fullName: 'Isaev Pavel Nikolaevich', login: 'demo_extra_05', position: 'Fitter extra NZV', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_foreman_nzv_1' },
+  { fullName: 'Klimova Olga Sergeevna', login: 'demo_extra_06', position: 'Fitter extra ASTR', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_EMPLOYEE', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_foreman_astr_1' },
+  { fullName: 'Lebedev Artem Olegovich', login: 'demo_extra_07', position: 'Shop Foreman extra', daysLeft: [null, null, null, null, null], orgRole: 'SHOP_FOREMAN', track: 'R_AND_M', baseCode: 'NZV_BPO', supervisorLogin: 'demo_mechanic_nzv' },
+  { fullName: 'Morozova Anna Viktorovna', login: 'demo_extra_08', position: 'Mechanic extra', daysLeft: [null, null, null, null, null], orgRole: 'MECHANIC', track: 'R_AND_M', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_senior_mech' },
+  { fullName: 'Nikitin Sergey Petrovich', login: 'demo_extra_09', position: 'Labor Safety Engineer extra', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_coord_nzv_1' },
+  { fullName: 'Orlova Natalia Denisovna', login: 'demo_extra_10', position: 'Technician drilling 3 extra', daysLeft: [null, null, null, null, null], orgRole: 'EMPLOYEE', track: 'TRS', baseCode: 'ASTR_BPO', supervisorLogin: 'demo_coord_astr_1' },
 ];
 
 const NUMBER_PREFIX = ['ОТ', 'ЭБ', 'ПБ', 'МЗ', 'ВР'];
 
 /** Должность из справочника (создаётся, если её ещё нет). */
-async function positionId(name: string): Promise<number> {
-  const row = await prisma.position.upsert({ where: { name }, update: {}, create: { name } });
+async function positionId(name: string, systemRoleCode = 'EMPLOYEE'): Promise<number> {
+  const row = await prisma.position.upsert({ where: { name }, update: { systemRole: { connect: { code: systemRoleCode } } }, create: { name, systemRole: { connect: { code: systemRoleCode } } } });
   return row.id;
 }
 
-async function main() {
-  if (await prisma.user.findUnique({ where: { login: 'ivanov' } })) {
-    console.log('Демо-данные уже загружены. Чтобы пересоздать: npm run db:reset && npm run db:demo');
-    return;
+async function ensureDemoContracts(adminUserId: number) {
+  const bases = await prisma.base.findMany({ where: { code: { in: ['NZV_BPO', 'ASTR_BPO'] }, isActive: true } });
+  const status = await prisma.contractStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+  const customers = await Promise.all(Array.from({ length: 5 }, (_, index) => {
+    const code = 'DEMO_CUSTOMER_' + String(index + 1).padStart(2, '0');
+    return prisma.customer.upsert({ where: { code }, update: {}, create: { code, name: 'Demo Customer ' + (index + 1) } });
+  }));
+  let index = 0;
+  for (const base of bases) for (let localIndex = 0; localIndex < 5; localIndex += 1) {
+    const number = 'DEMO-2026-' + String(index + 1).padStart(3, '0');
+    await prisma.contract.upsert({
+      where: { baseId_number: { baseId: base.id, number } },
+      update: {},
+      create: { baseId: base.id, customerId: customers[index % customers.length].id, statusId: status.id, number, startsAt: new Date('2026-01-01T00:00:00.000Z'), endsAt: new Date('2027-12-31T00:00:00.000Z'), createdById: adminUserId },
+    });
+    index += 1;
   }
-  const admin = await prisma.user.findFirst({ where: { role: 'ADMIN', isDeleted: false }, orderBy: { id: 'asc' } });
-  if (!admin) throw new Error('Нет администратора — сначала выполните npm run db:seed');
+}
 
+async function main() {
+  const existingDemoCount = await prisma.user.count({ where: { login: { in: EMPLOYEES.map((employee) => employee.login) } } });
+  const allDemoUsersExist = existingDemoCount === EMPLOYEES.length;
+
+  const admin = await prisma.user.findFirst({ where: { isDeleted: false, systemRoles: { some: { revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } } } }, orderBy: { id: 'asc' } });
+  if (!admin) throw new Error('Нет администратора — сначала выполните npm run db:seed');
+  await ensureDemoContracts(admin.id);
+  if (allDemoUsersExist) { console.log('All demo employees and demo contracts are already present.'); return; }
   const settingsTz = 'Europe/Moscow';
   const today = todayInTimezone(settingsTz);
 
@@ -98,32 +127,34 @@ async function main() {
   if (baseItems.length < 4) throw new Error('В справочнике меньше 4 позиций — выполните npm run db:seed');
 
   // Второй администратор — можно войти сразу, без смены пароля
-  const admin2 = await users.create(admin, {
-    fullName: 'Ковалёва Мария Петровна',
-    login: 'kovaleva',
-    password: DEMO_PASSWORD,
-    role: 'ADMIN',
-    positionId: await positionId('Специалист по кадрам'),
-    email: 'kovaleva@example.com',
-  });
+  const adminPositionId = await positionId('HR Specialist', 'ADMIN');
+  let admin2 = await prisma.user.findUnique({ where: { login: 'kovaleva' } });
+  if (!admin2) {
+    await users.create(admin, { fullName: 'Kovaleva Maria Petrovna', login: 'kovaleva', password: DEMO_PASSWORD, positionId: adminPositionId, email: 'kovaleva@example.com' });
+    admin2 = await prisma.user.findUniqueOrThrow({ where: { login: 'kovaleva' } });
+  }
+  if (admin2.positionId !== adminPositionId) {
+    await users.update(admin, admin2.id, { positionId: adminPositionId });
+    admin2 = await prisma.user.findUniqueOrThrow({ where: { login: 'kovaleva' } });
+  }
+  await setAccountRoles(admin, admin2.id, { roles: ['ADMIN'] });
   await prisma.user.update({ where: { id: admin2.id }, data: { mustChangePassword: false } });
   const actor = await prisma.user.findUniqueOrThrow({ where: { id: admin2.id } });
 
   // Сотрудники
   const created: { id: number; spec: (typeof EMPLOYEES)[number] }[] = [];
   for (const spec of EMPLOYEES) {
-    const u = await users.create(actor, {
-      fullName: spec.fullName,
-      login: spec.login,
-      password: DEMO_PASSWORD,
-      role: 'USER',
-      positionId: await positionId(spec.position),
-      phone: `+7 (900) 000-${String(10 + created.length).padStart(2, '0')}-${String(20 + created.length * 3).padStart(2, '0')}`,
-    });
-    if (!spec.mustChangePassword) {
-      await prisma.user.update({ where: { id: u.id }, data: { mustChangePassword: false } });
+    const positionIdValue = await positionId(spec.position, spec.orgRole ?? 'EMPLOYEE');
+    let row = await prisma.user.findUnique({ where: { login: spec.login } });
+    if (!row) {
+      await users.create(actor, { fullName: spec.fullName, login: spec.login, password: DEMO_PASSWORD, positionId: positionIdValue, phone: '+7 (900) 000-' + String(10 + created.length).padStart(2, '0') + '-' + String(20 + created.length * 3).padStart(2, '0') });
+      row = await prisma.user.findUniqueOrThrow({ where: { login: spec.login } });
+    } else if (row.positionId !== positionIdValue) {
+      await users.update(actor, row.id, { positionId: positionIdValue });
+      row = await prisma.user.findUniqueOrThrow({ where: { login: spec.login } });
     }
-    created.push({ id: u.id, spec });
+    if (!spec.mustChangePassword && row.mustChangePassword) await prisma.user.update({ where: { id: row.id }, data: { mustChangePassword: false } });
+    created.push({ id: row.id, spec });
   }
 
   // Полная синтетическая оргструктура: TRS и R&M для обеих демо-баз.
@@ -135,6 +166,10 @@ async function main() {
     if (!spec.orgRole || !spec.track) continue;
     await setAccountRoles(actor, id, { roles: [spec.orgRole] });
     const employee = await prisma.employee.findUniqueOrThrow({ where: { userId: id } });
+    const desiredPositionId = await positionId(spec.position, spec.orgRole ?? 'EMPLOYEE');
+    const desiredBaseId = spec.baseCode ? baseByCode.get(spec.baseCode) ?? null : null;
+    const currentAssignment = await prisma.employeeAssignment.findUnique({ where: { activeEmployeeId: employee.id } });
+    if (currentAssignment?.track === spec.track && currentAssignment.positionId === desiredPositionId && currentAssignment.baseId === desiredBaseId) continue;
     const supervisorUserId = spec.supervisorLogin ? createdByLogin.get(spec.supervisorLogin) : undefined;
     const supervisor = supervisorUserId
       ? await prisma.employee.findUniqueOrThrow({ where: { userId: supervisorUserId } })
@@ -145,11 +180,13 @@ async function main() {
       track: spec.track,
       ...(baseId ? { baseId } : {}),
       ...(supervisor ? { supervisorEmployeeId: supervisor.id } : {}),
-      positionId: await positionId(spec.position),
+      positionId: await positionId(spec.position, spec.orgRole ?? 'EMPLOYEE'),
       startsAt: today,
       reason: 'Синтетическое демо-назначение',
     });
   }
+
+  if (existingDemoCount > 0) { console.log('Missing demo employees and assignments added; existing demo activity was left unchanged.'); return; }
 
   // Новая позиция справочника появляется у всех уже созданных сотрудников
   const height = await catalog.create(actor, { name: HEIGHT_WORK, validityMonths: 12, sortOrder: 5 });

@@ -11,7 +11,6 @@ model User {
   fullName                          String                      @db.VarChar(200)
   login                             String                      @unique @db.VarChar(50)
   passwordHash                      String                      @db.VarChar(255)
-  role                              Role                        @default(USER)
   phone                             String?                     @db.VarChar(50)
   email                             String?                     @db.VarChar(150)
   photoFile                         String?                     @db.VarChar(100)
@@ -50,8 +49,8 @@ model User {
   createdWork                       WorkExecution[]             @relation("WorkCreator")
   createdWorkAssignments            WorkAssignment[]            @relation("WorkAssignmentCreator")
   createdCustomerSiteWorks          CustomerSiteWork[]          @relation("CustomerSiteWorkCreator")
+  createdPlannedWorks               PlannedWork[]                @relation("PlannedWorkCreator")
 
-  @@index([role, isDeleted])
   @@index([positionId], map: "User_positionId_fkey")
 }
 
@@ -59,12 +58,16 @@ model User {
 model Position {
   id          Int                  @id @default(autoincrement())
   name        String               @unique @db.VarChar(150)
+  systemRoleId Int
   sortOrder   Int                  @default(0)
   isArchived  Boolean              @default(false)
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
+  systemRole  SystemRole           @relation(fields: [systemRoleId], references: [id], onDelete: Restrict)
   users       User[]
   assignments EmployeeAssignment[]
+
+  @@index([systemRoleId])
 }
 
 /// Existing User rows remain the authentication account/API compatibility boundary.
@@ -83,6 +86,9 @@ model Employee {
   plannedWork                 WorkAssignmentResponsible[]
   changes                     OrganizationChange[]
   supervisedCustomerSiteWorks CustomerSiteWork[]          @relation("CustomerSiteWorkSupervisor")
+  coordinatedPlannedWorks     PlannedWork[]               @relation("PlannedWorkCoordinator")
+  supervisedPlannedWorks      PlannedWork[]               @relation("PlannedWorkSupervisor")
+  assignedPlannedWorks        PlannedWorkEmployee[]
 
   @@index([userId])
 }
@@ -100,6 +106,7 @@ model Base {
   mines           Mine[]
   contracts       Contract[]
   workAssignments WorkAssignment[]
+  plannedWorks    PlannedWork[]
 
   @@index([isActive, name])
 }
@@ -118,13 +125,15 @@ model AssignmentStatus {
 }
 
 model SystemRole {
-  id        Int              @id @default(autoincrement())
-  code      String           @unique @db.VarChar(50)
-  name      String           @db.VarChar(100)
-  isActive  Boolean          @default(true)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  users     UserSystemRole[]
+  id          Int              @id @default(autoincrement())
+  code        String           @unique @db.VarChar(50)
+  name        String           @db.VarChar(100)
+  description String           @db.Text
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserSystemRole[]
+  positions   Position[]
 
   @@index([isActive, code])
 }
@@ -216,6 +225,7 @@ model Mine {
   wells                  Well[]
   workAssignments        WorkAssignment[]
   customerSiteWorks      CustomerSiteWork[]
+  plannedWorks           PlannedWork[]
 
   @@unique([baseId, name])
   @@unique([baseId, code])
@@ -257,6 +267,7 @@ model Well {
   executions        WorkExecution[]
   workAssignments   WorkAssignment[]
   customerSiteWorks CustomerSiteWork[]
+  plannedWorks      PlannedWork[]
 
   @@unique([mineId, name])
   @@unique([mineId, code])
@@ -508,6 +519,46 @@ model WorkAssignmentResponsible {
   @@index([employeeId, workAssignmentId])
 }
 
+model PlannedWork {
+  id                   Int                   @id @default(autoincrement())
+  baseId               Int
+  mineId               Int
+  clusterNumber        String                @db.VarChar(50)
+  wellId               Int?
+  name                 String                @db.VarChar(200)
+  startsAt             DateTime              @db.Date
+  endsAt               DateTime              @db.Date
+  coordinatorEmployeeId Int
+  supervisorEmployeeId Int
+  createdById          Int?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  base                 Base                  @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  mine                 Mine                  @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  well                 Well?                 @relation(fields: [wellId], references: [id], onDelete: Restrict)
+  coordinator          Employee              @relation("PlannedWorkCoordinator", fields: [coordinatorEmployeeId], references: [id], onDelete: Restrict)
+  supervisor           Employee              @relation("PlannedWorkSupervisor", fields: [supervisorEmployeeId], references: [id], onDelete: Restrict)
+  createdBy            User?                 @relation("PlannedWorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  employees            PlannedWorkEmployee[]
+
+  @@index([baseId, startsAt, endsAt])
+  @@index([baseId, clusterNumber, startsAt])
+  @@index([mineId, startsAt, endsAt])
+  @@index([wellId])
+  @@index([coordinatorEmployeeId])
+  @@index([supervisorEmployeeId])
+}
+
+model PlannedWorkEmployee {
+  plannedWorkId Int
+  employeeId    Int
+  plannedWork   PlannedWork @relation(fields: [plannedWorkId], references: [id], onDelete: Cascade)
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@id([plannedWorkId, employeeId])
+  @@index([employeeId, plannedWorkId])
+}
+
 model CustomerSiteWork {
   id                   Int      @id @default(autoincrement())
   name                 String   @db.VarChar(200)
@@ -727,11 +778,6 @@ enum WorkDayStatus {
   SICK_LEAVE
   VACATION
   TRAINING
-}
-
-enum Role {
-  ADMIN
-  USER
 }
 
 enum NotificationKind {

@@ -1,12 +1,5 @@
 import type { Credential, User, UserCredential } from '@prisma/client';
-import {
-  getCredentialStatus,
-  parse,
-  uiSettingsSchema,
-  type StatusThresholds,
-  type UserCredentialDto,
-  type UserDto,
-} from '@app/shared';
+import { getCredentialStatus, parse, uiSettingsSchema, SYSTEM_ROLE_CODES, type StatusThresholds, type UserCredentialDto, type UserDto } from '@app/shared';
 import { fromDbDate } from './dates.ts';
 import type { UserWithPosition } from './db.ts';
 
@@ -17,8 +10,7 @@ export function toUserDto(user: UserWithPosition): UserDto {
     id: user.id,
     fullName: user.fullName,
     login: user.login,
-    role: user.role,
-    systemRoles: user.systemRoles.map((grant) => grant.systemRole.code),
+    systemRoles: user.systemRoles.map((grant) => grant.systemRole.code as (typeof SYSTEM_ROLE_CODES)[number]),
     positionId: user.positionId,
     position: user.position?.name ?? null,
     phone: user.phone,

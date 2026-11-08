@@ -32,7 +32,7 @@ const today = () => {
 
 export function WorkExecutionPage() {
   const user = useCurrentUser();
-  const isAdmin = user.role === 'ADMIN';
+  const isAdmin = user.systemRoles.includes('ADMIN');
   const selfQuery = useQuery('org:work:self', () => api.get<Employee>(`/org/users/${user.id}/employee`));
   const isManager = selfQuery.data?.user.systemRoles.some((grant) => grant.systemRole.code === 'MANAGER') ?? false;
   const canManageWork = isAdmin || isManager;

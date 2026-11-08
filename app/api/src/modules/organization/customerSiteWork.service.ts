@@ -21,7 +21,7 @@ async function roles(tx: Tx, userId: number) {
   if (codes.includes('MANAGER') && !codes.includes('COORDINATOR')) codes.push('COORDINATOR');
   return codes;
 }
-const admin = (user: User, roleCodes: string[]) => user.role === 'ADMIN' || roleCodes.includes('ADMIN');
+const admin = (user: User, roleCodes: string[]) => roleCodes.includes('ADMIN');
 
 async function permittedMineIds(tx: Tx, employeeId: number) {
   const rows = await tx.mineCoordinatorAssignment.findMany({

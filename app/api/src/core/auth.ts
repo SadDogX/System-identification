@@ -25,9 +25,8 @@ export function isUsable(user: User | null): user is User {
   return !!user && user.isActive && !user.isDeleted;
 }
 
-/** Legacy ADMIN accounts and the corresponding active system grant are both administrative. */
+/** Administrative access is the active ADMIN grant in the centralized role directory. */
 export async function isAdministrator(user: User): Promise<boolean> {
-  if (user.role === 'ADMIN') return true;
   return !!(await prisma.userSystemRole.findFirst({
     where: { userId: user.id, revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } },
     select: { id: true },
@@ -57,7 +56,7 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
 export const requireSystemRole = (...roles: string[]) =>
   asyncHandler(async (req, _res, next) => {
     const user = currentUser(req);
-    if (user.role === 'ADMIN') return next();
+    if (await isAdministrator(user)) return next();
 
     const required = new Set(roles);
     if (required.has('COORDINATOR')) required.add('MANAGER');

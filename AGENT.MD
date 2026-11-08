@@ -31,32 +31,26 @@ For complex tasks, provide a short implementation plan before making changes.
 
 Do not ask for approval for routine implementation steps unless explicitly required.
 
-## 4. PowerShell Execution Rules
+## 4. Terminal Execution and PowerShell Rules
 
-### Command Limits
-- Maximum 2 attempts for the same command.
-- Never repeat an identical failed command without changing its arguments or correcting the identified cause.
-- After 2 failures, STOP and report the problem.
-- Never enter an infinite retry loop.
-
-### Error Handling
-When a command fails:
-1. Read the complete error message.
-2. Identify the actual cause.
-3. Determine whether the problem is related to syntax, permissions, environment, dependencies, ports, or services.
-4. Select a different diagnostic or corrective action.
-5. Retry only if there is a justified change.
-
-If the same error occurs twice, stop execution and request intervention when necessary.
+### Command Limits and Retries
+- Never repeat an identical command after it fails.
+- Maximum 2 attempts per command. A second attempt is allowed only after inspecting the error, identifying the cause, and correcting it.
+- If the same error occurs twice, STOP execution immediately.
+- Do not repeatedly retry failures caused by environment, permissions, port conflicts, missing dependencies, unavailable services, or other unchanged conditions.
+- Before any retry, inspect the complete error and determine the root cause; change the command or environment only to address that cause.
+- After 2 failed attempts, report the command executed, exact error, identified or suspected root cause, and proposed corrective action.
+- Never claim a command succeeded without checking its exit code and verifying the expected result.
 
 ### PowerShell Compatibility
-- Check the installed PowerShell version when shell compatibility is relevant.
-- Use syntax compatible with the installed version.
-- Do not assume PowerShell 7 features are available in Windows PowerShell 5.1.
-- Prefer simple, independent commands over complex command chains.
-- Check exit codes and command results explicitly.
+- Use syntax compatible with the installed PowerShell version; do not assume PowerShell 7 operators or features work in Windows PowerShell 5.1.
+- Prefer short, targeted, independent PowerShell commands over long command chains.
+- Avoid unsupported shell operators and handle errors and exit codes explicitly.
 
-### Environment Safety
+### Resource and Environment Safety
+- Minimize terminal calls; reuse output already retrieved and do not repeat completed checks without a new reason.
+- Avoid unnecessary directory listings and repeated file searches; use targeted paths and patterns.
+- Never execute destructive commands without explicit justification.
 - Never terminate processes or containers without identifying them first.
 - Never delete files, migrations, databases, or project data without explicit justification.
 - Never change ports, environment variables, or configuration files unnecessarily.

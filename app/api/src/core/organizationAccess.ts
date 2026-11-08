@@ -13,7 +13,7 @@ export async function systemRoleCodes(userId: number): Promise<string[]> {
 /** User IDs the caller may manage. ADMIN sees all; other roles stay in their active org scope. */
 export async function manageableUserIds(actor: User): Promise<number[]> {
   const roles = await systemRoleCodes(actor.id);
-  if (actor.role === 'ADMIN' || roles.includes('ADMIN')) return [];
+  if (roles.includes('ADMIN')) return [];
 
   const employee = await prisma.employee.findUnique({ where: { userId: actor.id }, select: { id: true } });
   if (!employee) return [actor.id];

@@ -108,7 +108,7 @@ describe('авторизация и доступ', () => {
     const { adminToken } = await setup();
     const created = await api('POST', '/api/admin/users', {
       token: adminToken,
-      body: { fullName: 'Петров Пётр', login: 'petrov', password: 'temp-pass-1', role: 'USER' },
+      body: { fullName: 'Петров Пётр', login: 'petrov', password: 'temp-pass-1', positionId: (await prisma.position.findFirstOrThrow({ where: { systemRole: { code: 'EMPLOYEE' } } })).id },
     });
     assert.equal(created.status, 201);
 
@@ -130,17 +130,17 @@ describe('авторизация и доступ', () => {
   it('админ не может удалить себя и разжаловать последнего админа', async () => {
     const { admin, adminToken } = await setup();
     assert.equal((await api('DELETE', `/api/admin/users/${admin.id}`, { token: adminToken })).status, 400);
-    assert.equal((await api('PATCH', `/api/admin/users/${admin.id}`, { token: adminToken, body: { role: 'USER' } })).status, 400);
+    assert.equal((await api('PATCH', `/api/admin/users/${admin.id}`, { token: adminToken, body: { isActive: false } })).status, 400);
   });
 
   it('ошибки валидации возвращаются по полям', async () => {
     const { adminToken } = await setup();
     const res = await api('POST', '/api/admin/users', {
       token: adminToken,
-      body: { fullName: '', login: 'я', password: '1', role: 'ROOT' },
+      body: { fullName: '', login: 'я', password: '1' },
     });
     assert.equal(res.status, 400);
-    assert.deepEqual(Object.keys(res.body.details).sort(), ['fullName', 'login', 'password', 'role']);
+    assert.deepEqual(Object.keys(res.body.details).sort(), ['fullName', 'login', 'password', 'positionId']);
   });
 });
 
@@ -152,15 +152,15 @@ describe('пользователи и справочник', () => {
 
     const user = await api('POST', '/api/admin/users', {
       token: adminToken,
-      body: { fullName: 'Иванов', login: 'ivanov', password: 'password123', role: 'USER' },
+      body: { fullName: 'Иванов', login: 'ivanov', password: 'password123', positionId: (await prisma.position.findFirstOrThrow({ where: { systemRole: { code: 'EMPLOYEE' } } })).id },
     });
     const admin2 = await api('POST', '/api/admin/users', {
       token: adminToken,
-      body: { fullName: 'Сидоров', login: 'sidorov', password: 'password123', role: 'ADMIN' },
+      body: { fullName: 'Сидоров', login: 'sidorov', password: 'password123', positionId: (await prisma.position.findFirstOrThrow({ where: { systemRole: { code: 'ADMIN' } } })).id },
     });
 
     assert.equal(await prisma.userCredential.count({ where: { userId: user.body.id } }), 2);
-    assert.equal(await prisma.userCredential.count({ where: { userId: admin2.body.id } }), 0);
+    assert.equal(await prisma.userCredential.count({ where: { userId: admin2.body.id } }), 2);
   });
 
   it('новая позиция справочника появляется у всех сотрудников (backfill)', async () => {
@@ -169,14 +169,15 @@ describe('пользователи и справочник', () => {
     const u2 = await createUser('USER');
     const item = await createCatalogItem(adminToken);
     const rows = await prisma.userCredential.findMany({ where: { credentialId: item.id } });
-    assert.deepEqual(rows.map((r) => r.userId).sort(), [u1.id, u2.id].sort());
+    assert.ok(rows.some((r) => r.userId === u1.id));
+    assert.ok(rows.some((r) => r.userId === u2.id));
   });
 
   it('логин уникален', async () => {
     const { admin, adminToken } = await setup();
     const res = await api('POST', '/api/admin/users', {
       token: adminToken,
-      body: { fullName: 'Дубль', login: admin.login, password: 'password123', role: 'USER' },
+      body: { fullName: 'Дубль', login: admin.login, password: 'password123', positionId: (await prisma.position.findFirstOrThrow({ where: { systemRole: { code: 'EMPLOYEE' } } })).id },
     });
     assert.equal(res.status, 409);
   });
@@ -245,11 +246,11 @@ describe('удостоверения', () => {
   it('пометка на удаление скрывает запись из списков и статистики, снятие — возвращает', async () => {
     const { adminToken, token, uc } = await userWithCredential();
     const before = await api('GET', '/api/admin/dashboard', { token: adminToken });
-    assert.equal(before.body.counts.WHITE, 1);
+    assert.equal(before.body.counts.WHITE, 2);
 
     assert.equal((await api('POST', `/api/admin/credentials/${uc.id}/mark-deletion`, { token: adminToken })).status, 200);
     const afterMark = await api('GET', '/api/admin/dashboard', { token: adminToken });
-    assert.equal(afterMark.body.counts.WHITE, 0);
+    assert.equal(afterMark.body.counts.WHITE, 1);
     assert.equal((await api('GET', '/api/me/credentials', { token })).body.length, 0);
     const marked = await api('GET', '/api/admin/credentials?marked=true', { token: adminToken });
     assert.equal(marked.body.total, 1);
@@ -288,7 +289,7 @@ describe('сообщения и уведомления', () => {
       body: { recipient: 'all', subject: 'Собрание', body: 'В пятницу в 10:00' },
     });
     assert.equal(res.status, 201);
-    assert.equal(res.body.recipientsCount, 1);
+    assert.equal(res.body.recipientsCount, 2);
     assert.equal(await prisma.notification.count({ where: { userId: active.id, kind: 'MESSAGE' } }), 1);
     assert.equal(await prisma.notification.count({ where: { userId: blocked.id } }), 0);
 

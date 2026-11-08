@@ -16,7 +16,7 @@ export async function getDashboard(admin: User): Promise<DashboardDto> {
   const yellow = statusWhere('YELLOW', today, settings);
 
   const [totalUsers, statusCounts, upcomingRows, criticalGroups, recentChanges, unread] = await Promise.all([
-    prisma.user.count({ where: { role: 'USER', isDeleted: false, ...(userIds.length && { id: { in: userIds } }) } }),
+    prisma.user.count({ where: { isDeleted: false, ...(userIds.length && { id: { in: userIds } }) } }),
     Promise.all(
       CREDENTIAL_STATUSES.map((s) =>
         prisma.userCredential.count({ where: { ...visibleCredentialWhere, ...(userIds.length && { userId: { in: userIds } }), ...statusWhere(s, today, settings) } }),

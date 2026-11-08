@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "test": "vitest run"
   },
   "dependencies": {
     "@app/shared": "*",
@@ -13,9 +13,13 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "vitest": "^5.1.0"
   },
   "description": "Веб-интерфейс (React), модули в src/modules"
 }

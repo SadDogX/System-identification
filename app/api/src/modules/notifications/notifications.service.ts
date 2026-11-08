@@ -41,7 +41,7 @@ type PendingLine = ExpiryLine & { key: string };
 
 /** Активные администраторы — им дублируются уведомления по всем сотрудникам. */
 export const activeAdmins = () =>
-  prisma.user.findMany({ where: { role: 'ADMIN', isDeleted: false, isActive: true }, select: { id: true, email: true } });
+  prisma.user.findMany({ where: { isDeleted: false, isActive: true, systemRoles: { some: { revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } } } }, select: { id: true, email: true } });
 
 /**
  * Создаёт уведомления о приближении окончания сроков (жёлтые и красные).
@@ -62,7 +62,7 @@ export async function checkExpiryNotifications(opts: { userCredentialId?: number
       ...(opts.userCredentialId && { id: opts.userCredentialId }),
       isMarkedForDeletion: false,
       credential: { isArchived: false },
-      user: { role: 'USER', isDeleted: false, isActive: true },
+      user: { isDeleted: false, isActive: true },
       expiryDate: { not: null, lte: toDbDate(addDays(today, settings.yellowDays)) },
     },
     include: { credential: true, user: { select: { id: true, fullName: true, email: true } } },

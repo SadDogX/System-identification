@@ -25,7 +25,7 @@ export interface NavGroup {
 const USER_ITEMS: NavItem[] = [
   { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
   { to: '/user/work-execution', label: 'Договоры и работы', icon: 'doneAll' },
-  { to: '/user/work-assignments', label: 'Мои выезды', icon: 'work' },
+  { to: '/user/planned-work', label: 'План работ', icon: 'work' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
 ];
 
@@ -100,7 +100,7 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
         items: [
           { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
           { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
-          { to: '/admin/work-assignments', label: 'Выезды на работы', icon: 'work' },
+          { to: '/admin/planned-work', label: 'План работ', icon: 'work' },
         ],
       },
     ],
@@ -159,7 +159,7 @@ const CREDENTIAL_LEAD_NAV_GROUPS: NavGroup[] = [
 ];
 
 export function resolveNavGroups(user: UserDto): NavGroup[] {
-  if (user.role === 'ADMIN') return ADMIN_NAV_GROUPS;
+  if (user.systemRoles.includes('ADMIN')) return ADMIN_NAV_GROUPS;
 
   const isLead = user.systemRoles.some((role) => ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC'].includes(role));
   const isCredentialLead = user.systemRoles.some((role) => ['MECHANIC', 'SHOP_FOREMAN'].includes(role));

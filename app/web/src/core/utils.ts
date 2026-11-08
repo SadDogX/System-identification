@@ -27,4 +27,4 @@ export function formatDateTime(iso: string): string {
   });
 }
 
-export const ROLE_LABELS = { ADMIN: 'Администратор', USER: 'Сотрудник' } as const;
+export const ROLE_LABELS: Record<string, string> = { ADMIN: 'Administrator', MANAGER: 'Manager', COORDINATOR: 'Coordinator', SENIOR_MECHANIC: 'Senior mechanic', MECHANIC: 'Mechanic', SHOP_FOREMAN: 'Shop foreman', SHOP_EMPLOYEE: 'Shop employee', EMPLOYEE: 'Employee' };

@@ -5,7 +5,7 @@ import {
   type AppSettingsDto,
   type AuthResponse,
   type LoginRequest,
-  type Role,
+  type SystemRoleCode,
   type UserDto,
 } from '@app/shared';
 import { api, refreshSession, setAccessToken, setSessionHandlers } from './api.ts';
@@ -85,16 +85,16 @@ export function useCurrentUser(): UserDto {
   return user;
 }
 
-export const homePath = (user: UserDto) => (user.role === 'ADMIN' ? '/admin/dashboard' : '/user/dashboard');
+export const homePath = (user: UserDto) => (user.systemRoles.includes('ADMIN') ? '/admin/dashboard' : '/user/dashboard');
 
 /** Только UX: реальная проверка прав выполняется на сервере. */
-export function Protected({ role, systemRoles = [], children }: { role?: Role; systemRoles?: string[]; children: ReactNode }) {
+export function Protected({ systemRoles = [], children }: { systemRoles?: SystemRoleCode[]; children: ReactNode }) {
   const { user, initializing } = useAuth();
   const { path } = useRouter();
 
   if (initializing) return <Spinner />;
   if (!user) return <Redirect to="/login" />;
   if (user.mustChangePassword && path !== '/change-password') return <Redirect to="/change-password" />;
-  if (role && user.role !== role && !systemRoles.some((required) => user.systemRoles.includes(required))) return <Redirect to={homePath(user)} />;
+  if (systemRoles.length && !systemRoles.some((required) => user.systemRoles.includes(required))) return <Redirect to={homePath(user)} />;
   return <>{children}</>;
 }

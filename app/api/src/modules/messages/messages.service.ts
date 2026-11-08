@@ -13,7 +13,7 @@ export async function send(actor: User & { fullName: string }, input: SendMessag
   const recipients = await prisma.user.findMany({
     where:
       input.recipient === 'all'
-        ? { role: 'USER', isActive: true, isDeleted: false }
+        ? { isActive: true, isDeleted: false, employee: { isNot: null } }
         : { id: input.userId, isActive: true, isDeleted: false },
     select: { id: true, fullName: true },
   });
@@ -40,7 +40,7 @@ export async function send(actor: User & { fullName: string }, input: SendMessag
     // Остальные администраторы видят все отправленные сообщения у себя в уведомлениях.
     // messageId не ставим — иначе копии попадут в статистику «прочитали X из Y».
     const otherAdmins = await tx.user.findMany({
-      where: { role: 'ADMIN', isDeleted: false, isActive: true, id: { notIn: [actor.id, ...recipients.map((r) => r.id)] } },
+      where: { isDeleted: false, isActive: true, systemRoles: { some: { revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } } }, id: { notIn: [actor.id, ...recipients.map((r) => r.id)] } },
       select: { id: true },
     });
     if (otherAdmins.length > 0) {
