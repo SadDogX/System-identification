@@ -1,3 +1,5 @@
+import { translate, type Language } from './i18n.ts';
+import { getCurrentLanguage } from './languageState.ts';
 import { addDays, daysBetween } from './dates.ts';
 
 export const CREDENTIAL_STATUSES = ['GREEN', 'YELLOW', 'RED', 'WHITE'] as const;
@@ -50,26 +52,19 @@ export function expiryRangeForStatus(
   }
 }
 
-export const STATUS_LABELS: Record<CredentialStatus, string> = {
-  GREEN: 'Действует',
-  YELLOW: 'Требует внимания',
-  RED: 'Критично',
-  WHITE: 'Не заполнено',
-};
-
-function pluralDays(n: number): string {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return 'дней';
-  if (last === 1) return 'день';
-  if (last >= 2 && last <= 4) return 'дня';
-  return 'дней';
+export function statusLabels(language: Language = getCurrentLanguage()): Record<CredentialStatus, string> {
+  return { GREEN: translate(language, 'status.GREEN'), YELLOW: translate(language, 'status.YELLOW'), RED: translate(language, 'status.RED'), WHITE: translate(language, 'status.WHITE') };
 }
 
-/** Текст рядом с цветом: «осталось 45 дней», «истекло 3 дня назад». */
-export function daysLeftText(daysLeft: number | null): string {
-  if (daysLeft === null) return 'Не заполнено';
-  if (daysLeft === 0) return 'истекает сегодня';
-  if (daysLeft > 0) return `осталось ${daysLeft} ${pluralDays(daysLeft)}`;
-  return `истекло ${-daysLeft} ${pluralDays(daysLeft)} назад`;
+export const STATUS_LABELS: Record<CredentialStatus, string> = statusLabels();
+export const STATUS_MESSAGE_KEYS: Record<CredentialStatus, string> = { GREEN: 'status.GREEN', YELLOW: 'status.YELLOW', RED: 'status.RED', WHITE: 'status.WHITE' };
+
+export function daysLeftText(daysLeft: number | null, language: Language = getCurrentLanguage()): string {
+  if (daysLeft === null) return translate(language, 'status.notFilled');
+  if (daysLeft === 0) return translate(language, 'status.expiresToday');
+  const count = Math.abs(daysLeft);
+  const key = daysLeft > 0
+    ? (count === 1 ? 'status.remainingOne' : count < 5 ? 'status.remainingFew' : 'status.remainingMany')
+    : (count === 1 ? 'status.expiredOne' : count < 5 ? 'status.expiredFew' : 'status.expiredMany');
+  return translate(language, key, { count });
 }

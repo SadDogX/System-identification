@@ -43,8 +43,7 @@ interface Route {
 const ROUTES: Route[] = [
   { path: '/admin/dashboard', systemRoles: ['ADMIN', 'MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC'] ,render: () => <AdminDashboardPage /> },
   { path: '/admin/overview', systemRoles: ['ADMIN', 'MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC'] ,render: () => <OverviewPage /> },
-  { path: '/admin/dictionaries/employees', systemRoles: ['ADMIN', 'MANAGER'] ,render: () => <PersonnelPage key="create" mode="create" /> },
-  { path: '/admin/org/personnel', systemRoles: ['ADMIN', 'MANAGER'] ,render: () => <PersonnelPage key="directory" mode="directory" /> },
+  { path: '/admin/org/personnel', systemRoles: ['ADMIN', 'MANAGER'] ,render: () => <PersonnelPage /> },
   { path: '/admin/org/assignments', systemRoles: ['ADMIN', 'MANAGER'] ,render: () => <OrganizationPage key="assignments" view="assignments" /> },
   { path: '/admin/org/transfers', systemRoles: ['ADMIN', 'MANAGER'] ,render: () => <OrganizationPage key="transfers" view="transfers" /> },
   { path: '/admin/planned-work', systemRoles: ['ADMIN', 'MANAGER', 'COORDINATOR'] ,render: () => <PlannedWorkSchedulePage /> },

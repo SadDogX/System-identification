@@ -32,15 +32,16 @@ const EMPLOYEES: {
   baseCode?: 'NZV_BPO' | 'ASTR_BPO';
   supervisorLogin?: string;
 }[] = [
-  { fullName: 'Иванов Иван Иванович', login: 'ivanov', position: 'Электромонтёр', daysLeft: [400, 5, 700, 60, 200] },
-  { fullName: 'Петров Пётр Сергеевич', login: 'petrov', position: 'Мастер участка', daysLeft: [-12, 150, null, 8, 30] },
-  { fullName: 'Сидорова Анна Викторовна', login: 'sidorova', position: 'Инженер по охране труда', daysLeft: [900, 300, 1000, 250, null] },
-  { fullName: 'Кузнецов Алексей Павлович', login: 'kuznetsov', position: 'Слесарь-ремонтник', daysLeft: [null, -3, 45, null, null] },
-  { fullName: 'Смирнов Дмитрий Олегович', login: 'smirnov', position: 'Сварщик', daysLeft: [80, 20, 500, 2, 120] },
-  { fullName: 'Васильева Елена Андреевна', login: 'vasilieva', position: 'Кладовщик', daysLeft: [600, null, 365, 180, null] },
-  { fullName: 'Новиков Сергей Николаевич', login: 'novikov', position: 'Водитель погрузчика', daysLeft: [0, 95, 89, 11, 10] },
-  { fullName: 'Морозова Ольга Игоревна', login: 'morozova', position: 'Лаборант', daysLeft: [null, null, null, null, null], mustChangePassword: true },
-  { fullName: 'Фёдоров Артём Ильич', login: 'fedorov', position: 'Электрогазосварщик', daysLeft: [300, 40, 800, 70, 15], blocked: true },
+
+  { fullName: 'Ivanov Ivan Ivanovich', login: 'ivanov', position: 'Electrician', daysLeft: [400, 5, 700, 60, 200] },
+  { fullName: 'Petrov Petr Sergeevich', login: 'petrov', position: 'Site Foreman', daysLeft: [-12, 150, null, 8, 30] },
+  { fullName: 'Sidorova Anna Viktorovna', login: 'sidorova', position: 'Labor Safety Engineer', daysLeft: [900, 300, 1000, 250, null] },
+  { fullName: 'Kuznetsov Alexey Pavlovich', login: 'kuznetsov', position: 'Repair Fitter', daysLeft: [null, -3, 45, null, null] },
+  { fullName: 'Smirnov Dmitry Olegovich', login: 'smirnov', position: 'Welder', daysLeft: [80, 20, 500, 2, 120] },
+  { fullName: 'Vasilieva Elena Andreevna', login: 'vasilieva', position: 'Storekeeper', daysLeft: [600, null, 365, 180, null] },
+  { fullName: 'Novikov Sergey Nikolaevich', login: 'novikov', position: 'Forklift Driver', daysLeft: [0, 95, 89, 11, 10] },
+  { fullName: 'Morozova Olga Igorevna', login: 'morozova', position: 'Laboratory Assistant', daysLeft: [null, null, null, null, null], mustChangePassword: true },
+  { fullName: 'Fedorov Artem Ilyich', login: 'fedorov', position: 'Gas Electric Welder', daysLeft: [300, 40, 800, 70, 15], blocked: true },
   { fullName: 'Андреев Максим Игоревич', login: 'demo_manager_nzv', position: 'Менеджер БПО', daysLeft: [null, null, null, null, null], orgRole: 'MANAGER', track: 'TRS', baseCode: 'NZV_BPO' },
   { fullName: 'Беляев Роман Сергеевич', login: 'demo_manager_astr', position: 'Менеджер БПО', daysLeft: [null, null, null, null, null], orgRole: 'MANAGER', track: 'TRS', baseCode: 'ASTR_BPO' },
   { fullName: 'Воробьёв Кирилл Андреевич', login: 'demo_coord_nzv_1', position: 'Координатор', daysLeft: [null, null, null, null, null], orgRole: 'COORDINATOR', track: 'TRS', baseCode: 'NZV_BPO', supervisorLogin: 'demo_manager_nzv' },
@@ -209,17 +210,21 @@ async function main() {
     }
   }
 
-  const byLogin = (login: string) => created.find((c) => c.spec.login === login)!.id;
+  const byLogin = async (login: string) => {
+    const user = await prisma.user.findUnique({ where: { login }, select: { id: true } });
+    if (!user) throw new Error(`Demo seed expected employee '${login}', but no account exists`);
+    return user.id;
+  };
 
   // Кладовщику работы на высоте не нужны — пометка на удаление
   const vasilievaHeight = await prisma.userCredential.findFirstOrThrow({
-    where: { userId: byLogin('vasilieva'), credentialId: height.id },
+    where: { userId: await byLogin('vasilieva'), credentialId: height.id },
   });
   await credentials.adminMark(actor, vasilievaHeight.id);
 
   // Комментарий к просроченному удостоверению
   const petrovOt = await prisma.userCredential.findFirstOrThrow({
-    where: { userId: byLogin('petrov'), credentialId: items[0].id },
+    where: { userId: await byLogin('petrov'), credentialId: items[0].id },
   });
   await credentials.adminUpdate(actor, petrovOt.id, { comment: 'Записан на обучение, ждём новое удостоверение' });
 
@@ -236,13 +241,13 @@ async function main() {
   });
   await messages.send(actor, {
     recipient: 'user',
-    userId: byLogin('petrov'),
+    userId: await byLogin('petrov'),
     subject: 'Просрочено удостоверение по охране труда',
     body: 'Пётр Сергеевич, срок вашего удостоверения по охране труда истёк. Пожалуйста, внесите новую дату выдачи после обучения.',
   });
   await messages.send(actor, {
     recipient: 'user',
-    userId: byLogin('morozova'),
+    userId: await byLogin('morozova'),
     subject: 'Добро пожаловать',
     body: 'Ольга Игоревна, заполните, пожалуйста, даты выдачи ваших удостоверений в разделе «Мои удостоверения».',
   });
@@ -251,7 +256,7 @@ async function main() {
   await checkExpiryNotifications();
 
   // Сидорова уже всё прочитала
-  await prisma.notification.updateMany({ where: { userId: byLogin('sidorova') }, data: { readAt: new Date() } });
+  await prisma.notification.updateMany({ where: { userId: await byLogin('sidorova') }, data: { readAt: new Date() } });
 
   console.log(`Демо-данные загружены: ${created.length} сотрудников, 1 администратор, пароль у всех — ${DEMO_PASSWORD}`);
 }

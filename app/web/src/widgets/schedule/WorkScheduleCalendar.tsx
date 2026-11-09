@@ -1,8 +1,8 @@
 import type { PointerEvent, WheelEvent } from 'react';
 import { WORK_DAY_STATUSES, type WorkDayStatus } from '@app/shared';
+import { useLanguage } from '../../core/i18n.tsx';
+import { APP_MESSAGES, APP_WEEKDAYS, appMessage } from '../../core/appMessages.ts';
 import { getScheduleDates, getScheduleMonthName, WORK_SCHEDULE_CODES, WORK_SCHEDULE_COLORS, WORK_SCHEDULE_LABELS } from './schedulePresentation';
-
-const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 interface WorkScheduleCalendarProps {
   year: number;
@@ -14,9 +14,11 @@ interface WorkScheduleCalendarProps {
 }
 
 export function WorkScheduleLegend() {
+  const { language } = useLanguage();
+  const m = (key: keyof typeof APP_MESSAGES.ru) => appMessage(language, key);
   return (
     <div className="schedule-legend schedule-legend-top">
-      <strong>Статусы:</strong>
+      <strong>{m('statuses')}:</strong>
       {WORK_DAY_STATUSES.map((status) => (
         <span className="schedule-legend-item" key={status}>
           <i style={{ background: WORK_SCHEDULE_COLORS[status] }}>{WORK_SCHEDULE_CODES[status]}</i>
@@ -35,6 +37,9 @@ export function WorkScheduleCalendar({
   onPointerEnter,
   onWheel,
 }: WorkScheduleCalendarProps) {
+  const { language } = useLanguage();
+  const m = (key: keyof typeof APP_MESSAGES.ru) => appMessage(language, key);
+  const weekdays = APP_WEEKDAYS[language];
   const dates = getScheduleDates(year);
 
   return (
@@ -47,7 +52,7 @@ export function WorkScheduleCalendar({
           <section className="panel schedule-month" key={month}>
             <h3>{getScheduleMonthName(month)}</h3>
             <div className="schedule-weekdays">
-              {WEEKDAYS.map((day) => (
+              {weekdays.map((day) => (
                 <span key={day}>{day}</span>
               ))}
             </div>
@@ -70,7 +75,7 @@ export function WorkScheduleCalendar({
                     onPointerDown={(event) => onPointerDown(date, event)}
                     onPointerEnter={() => onPointerEnter(date)}
                     onWheel={(event) => onWheel(event, date)}
-                    title={`${date}: ${status ? WORK_SCHEDULE_LABELS[status] : 'Не задано'}`}
+                    title={`${date}: ${status ? WORK_SCHEDULE_LABELS[status] : m('scheduleNotSet')}`}
                   >
                     <span className="schedule-day-number">{Number(date.slice(8, 10))}</span>
                     {status && <span className="schedule-status-code">{WORK_SCHEDULE_CODES[status]}</span>}

@@ -87,6 +87,7 @@ export const UI_THEMES = ['slate', 'navy', 'graphite', 'forest', 'burgundy', 'li
 export type UiTheme = (typeof UI_THEMES)[number];
 
 export const uiSettingsSchema = object({
+  language: optional(oneOf(['ru', 'en'] as const)),
   credentialsView: optional(oneOf(VIEW_MODES)),
   theme: optional(oneOf(UI_THEMES)),
 });

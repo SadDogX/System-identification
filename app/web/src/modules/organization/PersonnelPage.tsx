@@ -13,13 +13,13 @@ interface Assignment { baseId: number | null; supervisorEmployeeId: number | nul
 interface Employee { id: number; user: { id: number; fullName: string; login: string; phone: string | null; email: string | null; systemRoles: { systemRole: { code: string } }[] }; assignments: Assignment[] }
 interface PersonnelAssignment { baseId: number | null; supervisorEmployeeId: number | null; startsAt: string; track: Track }
 
-export function PersonnelPage({ mode }: { mode: 'directory' | 'create' }) {
+export function PersonnelPage() {
   const basesQuery = useQuery('org:bases', () => api.get<Base[]>('/org/bases'));
   const positionsQuery = useQuery('org:personnel:positions', () => api.get<PositionDto[]>('/admin/positions'));
   const employeesQuery = useQuery('org:employees', () => api.get<Employee[]>('/org/employees'));
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: PersonnelSortKey; direction: PersonnelSortDirection }>({ key: 'name', direction: 'asc' });
-  const [dialogOpen, setDialogOpen] = useState(mode === 'create');
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<UserDialogMode>('create');
   const [selectedUser, setSelectedUser] = useState<UserDto>();
   const [selectedAssignment, setSelectedAssignment] = useState<PersonnelAssignment>();
@@ -36,7 +36,7 @@ export function PersonnelPage({ mode }: { mode: 'directory' | 'create' }) {
   };
   const openDialog = async (employee: Employee, nextMode: UserDialogMode) => {
     try {
-      const response = await api.get<{ user: UserDto }>(`/admin/users/${employee.user.id}`);
+      const response = await api.get<{ user: UserDto; credentials: unknown[] }>(`/admin/users/${employee.user.id}`);
       const assignment = employee.assignments[0];
       setSelectedUser(response.user);
       setSelectedAssignment(assignment ? {
@@ -55,9 +55,7 @@ export function PersonnelPage({ mode }: { mode: 'directory' | 'create' }) {
   const sortHeader = (label: string, key: PersonnelSortKey) => <th aria-sort={sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSortKey(key)} aria-label={`Sort by ${label}`}>{label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>;
 
   return <>
-    <PageHeader title="Персонал БПО" subtitle="Сотрудники, должности и организационные назначения" actions={mode === 'create'
-      ? <Link to="/admin/org/personnel" className="btn">К справочнику персонала</Link>
-      : <button type="button" className="btn btn-primary" onClick={() => { setSelectedUser(undefined); setSelectedAssignment(undefined); setDialogMode('create'); setDialogOpen(true); }}><Icon name="add" small /> Добавить сотрудника</button>} />
+    <PageHeader title="Персонал БПО" subtitle="Сотрудники, должности и организационные назначения" actions={<button type="button" className="btn btn-primary" onClick={() => { setSelectedUser(undefined); setSelectedAssignment(undefined); setDialogMode('create'); setDialogOpen(true); }}><Icon name="add" small /> Добавить сотрудника</button>} />
     {(basesQuery.error || positionsQuery.error || employeesQuery.error) && <Alert>{basesQuery.error ?? positionsQuery.error ?? employeesQuery.error}</Alert>}
     <div className="panel pad row wrap" style={{ marginBottom: 12 }}>
       <SearchInput value={search} placeholder="ФИО, логин, контакт, должность или база" onChange={setSearch} />

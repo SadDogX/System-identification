@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { formatDateRu, type UserCredentialDto, type UserDto, type ViewMode } from '@app/shared';
-import { api } from '../../core/api.ts';
+import { formatDateRu, statusLabels, daysLeftText, type UserCredentialDto, type UserDto, type ViewMode } from '@app/shared';
 import { useAuth } from '../../core/auth.tsx';
+import { useLanguage } from '../../core/i18n.tsx';
+import { api } from '../../core/api.ts';
 import { useIsMobile } from '../../core/data.ts';
 import { Link } from '../../core/router.tsx';
 import { StatusBadge } from '@app/shared/ui';
@@ -44,6 +45,7 @@ function MarkedNote({ item }: { item: UserCredentialDto }) {
 }
 
 export function CredentialTable({ items, showUser, actions, emptyText = 'Нет записей' }: ViewProps) {
+  const { language } = useLanguage();
   if (items.length === 0) return <div className="empty">{emptyText}</div>;
   return (
     <div className="table-wrap">
@@ -75,7 +77,7 @@ export function CredentialTable({ items, showUser, actions, emptyText = 'Нет 
               <td>{formatDateRu(item.issueDate)}</td>
               <td>{formatDateRu(item.expiryDate)}</td>
               <td>
-                <StatusBadge status={item.status} daysLeft={item.daysLeft} />
+                <StatusBadge status={item.status} daysLeft={item.daysLeft} label={statusLabels(language)[item.status]} daysText={daysLeftText(item.daysLeft, language)} />
               </td>
               {actions && <td className="actions">{actions(item)}</td>}
             </tr>
@@ -87,6 +89,7 @@ export function CredentialTable({ items, showUser, actions, emptyText = 'Нет 
 }
 
 export function CredentialCards({ items, showUser, actions, emptyText = 'Нет записей' }: ViewProps) {
+  const { language } = useLanguage();
   if (items.length === 0) return <div className="empty">{emptyText}</div>;
   return (
     <div className="cards">
@@ -95,7 +98,7 @@ export function CredentialCards({ items, showUser, actions, emptyText = 'Нет 
           <div className="title">{item.name}</div>
           {showUser && <UserLink item={item} />}
           <div>
-            <StatusBadge status={item.status} daysLeft={item.daysLeft} />
+            <StatusBadge status={item.status} daysLeft={item.daysLeft} label={statusLabels(language)[item.status]} daysText={daysLeftText(item.daysLeft, language)} />
           </div>
           <div className="kv">
             Номер <b>{item.number ?? '—'}</b>

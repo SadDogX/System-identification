@@ -1,5 +1,6 @@
 import type { SystemRoleCode } from './roles.ts';
 import type { UiSettings, WorkDayStatus } from './schemas.ts';
+import type { Language } from './i18n.ts';
 import type { CredentialStatus, StatusThresholds } from './status.ts';
 
 export interface Paginated<T> { items: T[]; total: number; page: number; pageSize: number }

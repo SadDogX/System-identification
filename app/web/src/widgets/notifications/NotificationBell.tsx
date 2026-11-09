@@ -5,6 +5,8 @@ import { api } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { useQuery } from '../../core/data.ts';
 import { useRouter } from '../../core/router.tsx';
+import { useLanguage } from '../../core/i18n.tsx';
+import { APP_MESSAGES, appMessage } from '../../core/appMessages.ts';
 import { formatDateTime } from '../../core/utils.ts';
 import { dismissRead, markAllRead, markRead } from './notificationActions';
 
@@ -16,8 +18,10 @@ export function NotificationIcon({ notification }: { notification: NotificationD
 export function NotificationBell() {
   const user = useCurrentUser();
   const { navigate } = useRouter();
+  const { language } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useClickOutside(open, () => setOpen(false));
+  const m = (key: keyof typeof APP_MESSAGES.ru, values?: Record<string, string | number>) => appMessage(language, key, values);
 
   const unread = useQuery('notifications:unread', () => api.get<{ count: number }>('/me/notifications/unread-count'), {
     refreshMs: 60_000,
@@ -40,8 +44,8 @@ export function NotificationBell() {
       <button
         type="button"
         className={`icon-btn lg${count > 0 ? ' alert' : ''}`}
-        title="Уведомления"
-        aria-label={`Уведомления, непрочитанных: ${count}`}
+        title={m('notifications')}
+        aria-label={`${m('notifications')}, ${m('unreadCount')}: ${count}`}
         onClick={() => setOpen((current) => !current)}
       >
         <Icon name="bell" />
@@ -51,15 +55,15 @@ export function NotificationBell() {
         <div className="popover">
           <div className="popover-head notif-head">
             <div className="row">
-              <span className="bold">Уведомления</span>
-              {count > 0 && <span className="new-count">{count} новых</span>}
+              <span className="bold">{m('notifications')}</span>
+              {count > 0 && <span className="new-count">{count} {m('newCount')}</span>}
             </div>
             <div className="row">
               <button
                 type="button"
                 className="icon-btn tip"
-                data-tip="Прочитать все"
-                aria-label="Прочитать все"
+                data-tip={m('markAllRead')}
+                aria-label={m('markAllRead')}
                 disabled={count === 0}
                 onClick={() => markAllRead().catch(() => {})}
               >
@@ -68,8 +72,8 @@ export function NotificationBell() {
               <button
                 type="button"
                 className="icon-btn tip"
-                data-tip="Очистить прочитанные"
-                aria-label="Очистить прочитанные"
+                data-tip={m('clearRead')}
+                aria-label={m('clearRead')}
                 onClick={() => dismissRead().catch(() => {})}
               >
                 <Icon name="clearAll" />
@@ -77,7 +81,7 @@ export function NotificationBell() {
             </div>
           </div>
           <div className="popover-body">
-            {latest.data?.items.length === 0 && <div className="empty">Уведомлений нет</div>}
+            {latest.data?.items.length === 0 && <div className="empty">{m('noNotifications')}</div>}
             {latest.data?.items.map((notification) => (
               <button key={notification.id} type="button" className={`note${notification.readAt ? '' : ' unread'}`} onClick={() => goToNotification(notification)}>
                 <NotificationIcon notification={notification} />
@@ -99,7 +103,7 @@ export function NotificationBell() {
                 navigate(allPath);
               }}
             >
-              Все уведомления
+              {m('allNotifications')}
             </button>
           </div>
         </div>

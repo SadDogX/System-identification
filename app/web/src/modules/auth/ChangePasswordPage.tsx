@@ -2,6 +2,7 @@ import { changePasswordSchema, type AuthResponse } from '@app/shared';
 import { api, errorMessage } from '../../core/api.ts';
 import { homePath, useAuth, useCurrentUser } from '../../core/auth.tsx';
 import { Alert, PasswordField } from '@app/shared/ui';
+import { useLanguage } from '../../core/i18n.tsx';
 import { useAction } from '../../core/data.ts';
 import { useForm } from '../../core/form.ts';
 import { useRouter } from '../../core/router.tsx';
@@ -12,6 +13,7 @@ export function ChangePasswordPage() {
   const { applySession, logout } = useAuth();
   const { navigate } = useRouter();
   const form = useForm({ currentPassword: '', newPassword: '', confirm: '' });
+  const { t } = useLanguage();
 
   const save = useAction(
     (data: { currentPassword: string; newPassword: string }) => api.post<AuthResponse>('/auth/change-password', data),
@@ -28,17 +30,17 @@ export function ChangePasswordPage() {
     const data = form.validate(changePasswordSchema);
     if (!data) return;
     if (form.values.newPassword !== form.values.confirm) {
-      form.setErrors({ confirm: 'Пароли не совпадают' });
+      form.setErrors({ confirm: t('auth.mismatch') });
       return;
     }
     save.run(data);
   };
 
   return (
-    <AuthCard title={user.mustChangePassword ? 'Задайте постоянный пароль' : 'Смена пароля'}>
+    <AuthCard title={user.mustChangePassword ? t('auth.setPermanentPassword') : t('auth.changePassword')}>
       {user.mustChangePassword && (
         <div className="mb">
-          <Alert kind="info">Вы вошли с временным паролем. Придумайте новый, чтобы продолжить работу.</Alert>
+          <Alert kind="info">{t('auth.temporaryPasswordInfo')}</Alert>
         </div>
       )}
       <form
@@ -49,20 +51,20 @@ export function ChangePasswordPage() {
           submit();
         }}
       >
-        <PasswordField label="Текущий пароль" autoComplete="current-password" {...form.field('currentPassword')} />
-        <PasswordField label="Новый пароль (не менее 8 символов)" autoComplete="new-password" {...form.field('newPassword')} />
-        <PasswordField label="Повторите новый пароль" autoComplete="new-password" {...form.field('confirm')} />
+        <PasswordField label={t('auth.currentPassword')} autoComplete="current-password" {...form.field('currentPassword')} />
+        <PasswordField label={t('auth.newPassword')} autoComplete="new-password" {...form.field('newPassword')} />
+        <PasswordField label={t('auth.confirmPassword')} autoComplete="new-password" {...form.field('confirm')} />
         {save.error && Object.keys(form.errors).every((k) => !form.errors[k]) ? <Alert>{errorMessage(save.error)}</Alert> : null}
         <button type="submit" className="btn btn-primary" disabled={save.pending}>
-          Сохранить пароль
+          {t('auth.savePassword')}
         </button>
         {user.mustChangePassword ? (
           <button type="button" className="btn" onClick={() => logout().then(() => navigate('/login'))}>
-            Выйти
+            {t('signOut')}
           </button>
         ) : (
           <button type="button" className="btn" onClick={() => window.history.back()}>
-            Назад
+            {t('auth.back')}
           </button>
         )}
       </form>

@@ -1,26 +1,10 @@
-import type { UserDto } from '@app/shared';
+import type { Language, UserDto } from '@app/shared';
 import type { IconName } from '@app/shared/ui';
+import { translateSourceText } from '../../core/locale.ts';
 
-export interface NavItem {
-  to: string;
-  label: string;
-  icon: IconName;
-}
-
-export interface NavSubgroup {
-  label: string;
-  icon: IconName;
-  items: NavItem[];
-}
-
-export interface NavGroup {
-  label: string;
-  icon: IconName;
-  /** Прямая корневая ссылка без раскрывающейся группы. */
-  to?: string;
-  items?: NavItem[];
-  subgroups?: NavSubgroup[];
-}
+export interface NavItem { to: string; label: string; icon: IconName }
+export interface NavSubgroup { label: string; icon: IconName; items: NavItem[] }
+export interface NavGroup { label: string; icon: IconName; to?: string; items?: NavItem[]; subgroups?: NavSubgroup[] }
 
 const USER_ITEMS: NavItem[] = [
   { to: '/user/organization', label: 'Моя база и команда', icon: 'people' },
@@ -28,162 +12,111 @@ const USER_ITEMS: NavItem[] = [
   { to: '/user/planned-work', label: 'План работ', icon: 'work' },
   { to: '/user/credentials', label: 'Удостоверения', icon: 'badge' },
 ];
-
 const ADMIN_PEOPLE_ITEMS: NavItem[] = [
   { to: '/admin/overview', label: 'Список удостоверений', icon: 'overview' },
   { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
 ];
-
 const WPTS_ITEMS: NavItem[] = [
   { to: '/admin/radar-cards', label: 'Радар карты', icon: 'warning' },
   { to: '/admin/ifo', label: 'IFO', icon: 'overview' },
 ];
-
 const USER_WPTS_ITEMS: NavItem[] = [
   { to: '/user/radar-cards', label: 'Радар карты', icon: 'warning' },
   { to: '/user/ifo', label: 'IFO', icon: 'overview' },
 ];
-
 const ROOT_ADMIN_ITEMS: NavItem[] = [
   { to: '/admin/notifications', label: 'Уведомления', icon: 'bell' },
   { to: '/admin/messages', label: 'Сообщения', icon: 'send' },
   { to: '/admin/audit-log', label: 'Аудит и логи', icon: 'history' },
 ];
-
-const ROOT_USER_ITEMS: NavItem[] = [
-  { to: '/user/notifications', label: 'Уведомления', icon: 'bell' },
-];
-
+const ROOT_USER_ITEMS: NavItem[] = [{ to: '/user/notifications', label: 'Уведомления', icon: 'bell' }];
 const SCHEDULE_ADMIN_ITEMS: NavItem[] = [
   { to: '/admin/work-schedule', label: 'Таблица', icon: 'table' },
   { to: '/admin/work-schedule/calendar', label: 'Редактирование', icon: 'overview' },
   { to: '/admin/work-schedule/shift-partners', label: 'Генерация сменщиков', icon: 'people' },
 ];
-
 const SCHEDULE_USER_ITEMS: NavItem[] = [
   { to: '/user/work-schedule', label: 'Таблица', icon: 'table' },
   { to: '/user/work-schedule/calendar', label: 'Мой график', icon: 'overview' },
 ];
-
 const SCHEDULE_LEAD_ITEMS: NavItem[] = [
   { to: '/admin/team-work-schedule', label: 'График команды', icon: 'table' },
   { to: '/admin/team-work-schedule/calendar', label: 'Редактировать график', icon: 'overview' },
 ];
-
 const ADMIN_NAV_GROUPS: NavGroup[] = [
   { label: 'Панель управления', icon: 'dashboard', to: '/admin/dashboard' },
-  {
-    label: 'Сотрудники',
-    icon: 'people',
-    subgroups: [
-      { label: 'Удостоверения', icon: 'badge', items: ADMIN_PEOPLE_ITEMS },
-      { label: 'WPTS', icon: 'grid', items: WPTS_ITEMS },
-      { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_ADMIN_ITEMS },
-    ],
-  },
-  {
-    label: 'Организация БПО',
-    icon: 'people',
-    subgroups: [
-      {
-        label: 'Работа с персоналом',
-        icon: 'people',
-        items: [
-          { to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
-          { to: '/admin/dictionaries/employees', label: 'Добавить сотрудника', icon: 'add' },
-          { to: '/admin/org/assignments', label: 'Назначения и переводы', icon: 'doneAll' },
-        ],
-      },
-      {
-        label: 'Выполнение работ',
-        icon: 'work',
-        items: [
-          { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
-          { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
-          { to: '/admin/planned-work', label: 'План работ', icon: 'work' },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Справочники',
-    icon: 'book',
-    items: [
-      { to: '/admin/dictionaries/bases', label: 'Базы', icon: 'grid' },
-      { to: '/admin/dictionaries/organization', label: 'Статусы и виды работ', icon: 'book' },
-      { to: '/admin/positions', label: 'Должности', icon: 'work' },
-      { to: '/admin/catalog', label: 'Удостоверения', icon: 'badge' },
-    ],
-  },
+  { label: 'Сотрудники', icon: 'people', subgroups: [
+    { label: 'Удостоверения', icon: 'badge', items: ADMIN_PEOPLE_ITEMS },
+    { label: 'WPTS', icon: 'grid', items: WPTS_ITEMS },
+    { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_ADMIN_ITEMS },
+  ] },
+  { label: 'Организация БПО', icon: 'people', subgroups: [
+    { label: 'Работа с персоналом', icon: 'people', items: [
+      { to: '/admin/org/personnel', label: 'Персонал', icon: 'people' },
+      { to: '/admin/org/assignments', label: 'Назначения и переводы', icon: 'doneAll' },
+    ] },
+    { label: 'Выполнение работ', icon: 'work', items: [
+      { to: '/admin/org/contracts', label: 'Договоры', icon: 'book' },
+      { to: '/admin/organization', label: 'Месторождения и скважины', icon: 'grid' },
+      { to: '/admin/planned-work', label: 'План работ', icon: 'work' },
+    ] },
+  ] },
+  { label: 'Справочники', icon: 'book', items: [
+    { to: '/admin/dictionaries/bases', label: 'Базы', icon: 'grid' },
+    { to: '/admin/dictionaries/organization', label: 'Статусы и виды работ', icon: 'book' },
+    { to: '/admin/positions', label: 'Должности', icon: 'work' },
+    { to: '/admin/catalog', label: 'Удостоверения', icon: 'badge' },
+  ] },
   { label: 'Общие разделы', icon: 'grid', items: ROOT_ADMIN_ITEMS },
 ];
-
 const USER_NAV_GROUPS: NavGroup[] = [
   { label: 'Панель управления', icon: 'dashboard', to: '/user/dashboard' },
-  {
-    label: 'Сотрудники',
-    icon: 'people',
-    subgroups: [
-      { label: 'Работа и удостоверения', icon: 'badge', items: USER_ITEMS },
-      { label: 'WPTS', icon: 'grid', items: USER_WPTS_ITEMS },
-      { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_USER_ITEMS },
-    ],
-  },
+  { label: 'Сотрудники', icon: 'people', subgroups: [
+    { label: 'Работа и удостоверения', icon: 'badge', items: USER_ITEMS },
+    { label: 'WPTS', icon: 'grid', items: USER_WPTS_ITEMS },
+    { label: 'Учёт графиков', icon: 'table', items: SCHEDULE_USER_ITEMS },
+  ] },
   { label: 'Общие разделы', icon: 'grid', items: ROOT_USER_ITEMS },
 ];
-
 const LEAD_NAV_GROUPS: NavGroup[] = [
   ...USER_NAV_GROUPS,
-  {
-    label: 'Моя команда',
-    icon: 'people',
-    items: [
-      { to: '/admin/dashboard', label: 'Сводка команды', icon: 'dashboard' },
-      { to: '/admin/overview', label: 'Удостоверения команды', icon: 'overview' },
-      { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
-      ...SCHEDULE_LEAD_ITEMS,
-    ],
-  },
+  { label: 'Моя команда', icon: 'people', items: [
+    { to: '/admin/dashboard', label: 'Сводка команды', icon: 'dashboard' },
+    { to: '/admin/overview', label: 'Удостоверения команды', icon: 'overview' },
+    { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
+    ...SCHEDULE_LEAD_ITEMS,
+  ] },
 ];
-
 const CREDENTIAL_LEAD_NAV_GROUPS: NavGroup[] = [
   ...USER_NAV_GROUPS,
-  {
-    label: 'Моя команда',
-    icon: 'people',
-    items: [
-      { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
-      ...SCHEDULE_LEAD_ITEMS,
-    ],
-  },
+  { label: 'Моя команда', icon: 'people', items: [
+    { to: '/admin/credentials', label: 'Записи удостоверений', icon: 'badge' },
+    ...SCHEDULE_LEAD_ITEMS,
+  ] },
 ];
 
-export function resolveNavGroups(user: UserDto): NavGroup[] {
-  if (user.systemRoles.includes('ADMIN')) return ADMIN_NAV_GROUPS;
-
+export function resolveNavGroups(user: UserDto, language: Language): NavGroup[] {
   const isLead = user.systemRoles.some((role) => ['MANAGER', 'COORDINATOR', 'SENIOR_MECHANIC'].includes(role));
   const isCredentialLead = user.systemRoles.some((role) => ['MECHANIC', 'SHOP_FOREMAN'].includes(role));
-
-  if (isLead) return user.systemRoles.includes('COORDINATOR')
-    ? LEAD_NAV_GROUPS.map((group) => group.items?.some((item) => item.to === '/admin/dashboard')
-      ? { ...group, items: [...group.items, { to: '/admin/customer-site-works', label: '\u0420\u0430\u0431\u043e\u0442\u044b \u0437\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0430', icon: 'work' }] }
-      : group)
-    : LEAD_NAV_GROUPS;
-  if (isCredentialLead) return CREDENTIAL_LEAD_NAV_GROUPS;
-  return USER_NAV_GROUPS;
+  const groups: NavGroup[] = user.systemRoles.includes('ADMIN') ? ADMIN_NAV_GROUPS
+    : isLead ? (user.systemRoles.includes('COORDINATOR')
+      ? LEAD_NAV_GROUPS.map((group) => group.items?.some((item) => item.to === '/admin/dashboard')
+        ? { ...group, items: [...group.items, { to: '/admin/customer-site-works', label: 'Работы заказчика', icon: 'work' }] }
+        : group)
+      : LEAD_NAV_GROUPS)
+    : isCredentialLead ? CREDENTIAL_LEAD_NAV_GROUPS : USER_NAV_GROUPS;
+  const localizeItem = (item: NavItem): NavItem => ({ ...item, label: translateSourceText(item.label, language) });
+  return groups.map((group) => ({
+    ...group,
+    label: translateSourceText(group.label, language),
+    items: group.items?.map(localizeItem),
+    subgroups: group.subgroups?.map((subgroup) => ({ ...subgroup, label: translateSourceText(subgroup.label, language), items: subgroup.items.map(localizeItem) })),
+  }));
 }
 
-export function isNavItemActive(path: string, to: string) {
-  return path === to;
-}
-
+export function isNavItemActive(path: string, to: string) { return path === to; }
 export function groupHasActivePath(group: NavGroup, path: string) {
   if (group.to) return isNavItemActive(path, group.to);
-  return [...(group.items ?? []), ...(group.subgroups ?? []).flatMap((subgroup) => subgroup.items)].some(
-    (item) => isNavItemActive(path, item.to),
-  );
+  return [...(group.items ?? []), ...(group.subgroups ?? []).flatMap((subgroup) => subgroup.items)].some((item) => isNavItemActive(path, item.to));
 }
-
-export function subgroupHasActivePath(group: NavSubgroup, path: string) {
-  return group.items.some((item) => isNavItemActive(path, item.to));
-}
+export function subgroupHasActivePath(group: NavSubgroup, path: string) { return group.items.some((item) => isNavItemActive(path, item.to)); }

@@ -1,4 +1,4 @@
-import { STATUS_LABELS, daysLeftText, type CredentialStatus } from '../core/index.ts';
+import { daysLeftText, STATUS_LABELS, type CredentialStatus } from '../core/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
 
 const STATUS_ICONS: Record<CredentialStatus, IconName> = {
@@ -13,11 +13,11 @@ export function StatusIcon({ status }: { status: CredentialStatus }) {
 }
 
 /** Цвет + иконка + текст: статус понятен и без различения цветов. */
-export function StatusBadge({ status, daysLeft }: { status: CredentialStatus; daysLeft: number | null }) {
+export function StatusBadge({ status, daysLeft, label, daysText }: { status: CredentialStatus; daysLeft: number | null; label?: string; daysText?: string }) {
   return (
     <span className={`status s-${status}`}>
       <Icon name={STATUS_ICONS[status]} />
-      {status === 'WHITE' ? STATUS_LABELS.WHITE : daysLeftText(daysLeft)}
+      {status === 'WHITE' ? (label ?? STATUS_LABELS.WHITE) : (daysText ?? daysLeftText(daysLeft))}
     </span>
   );
 }

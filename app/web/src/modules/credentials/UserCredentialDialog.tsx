@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { addMonths, formatDateRu, getCredentialStatus, isIsoDate, todayInTimezone, type UserCredentialDto } from '@app/shared';
+import { addMonths, daysLeftText, formatDateRu, getCredentialStatus, isIsoDate, statusLabels, todayInTimezone, type UserCredentialDto } from '@app/shared';
 import { api, errorMessage } from '../../core/api.ts';
 import { useAuth } from '../../core/auth.tsx';
+import { useLanguage } from '../../core/i18n.tsx';
 import { invalidate, useAction } from '../../core/data.ts';
 import { formatValidity } from '../../core/utils.ts';
 import { PhotoField } from './Photo.tsx';
@@ -14,6 +15,7 @@ import { StatusBadge, Alert, Dialog, TextField } from '@app/shared/ui';
  */
 export function UserCredentialDialog({ item, onClose }: { item: UserCredentialDto | null; onClose: () => void }) {
   const { settings } = useAuth();
+  const { language, t, translateText } = useLanguage();
   const today = todayInTimezone(settings.timezone);
   const [issueDate, setIssueDate] = useState('');
 
@@ -35,7 +37,7 @@ export function UserCredentialDialog({ item, onClose }: { item: UserCredentialDt
   const changed = issueDate !== (item?.issueDate ?? '');
   const expiryPreview = item && validDate ? addMonths(issueDate, item.validityMonths) : null;
   const preview = expiryPreview ? getCredentialStatus(expiryPreview, today, settings) : null;
-  const dateError = issueDate && !validDate ? 'Дата выдачи не может быть в будущем' : undefined;
+  const dateError = issueDate && !validDate ? translateText('Дата выдачи не может быть в будущем') : undefined;
 
   return (
     <Dialog
@@ -50,10 +52,10 @@ export function UserCredentialDialog({ item, onClose }: { item: UserCredentialDt
       actions={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            {changed ? 'Отмена' : 'Закрыть'}
+            {changed ? t('common.cancel') : t('common.close')}
           </button>
           <button type="submit" className="btn btn-primary" disabled={!validDate || save.pending}>
-            Сохранить
+            {t('common.save')}
           </button>
         </>
       }
@@ -84,7 +86,7 @@ export function UserCredentialDialog({ item, onClose }: { item: UserCredentialDt
         <div className="muted small">Действительно до (рассчитывается автоматически)</div>
         <div className="row" style={{ marginTop: 4 }}>
           <span className="bold">{formatDateRu(expiryPreview)}</span>
-          {preview && <StatusBadge status={preview.status} daysLeft={preview.daysLeft} />}
+          {preview && <StatusBadge status={preview.status} daysLeft={preview.daysLeft} label={statusLabels(language)[preview.status]} daysText={daysLeftText(preview.daysLeft, language)} />}
         </div>
       </div>
 

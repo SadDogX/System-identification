@@ -3,6 +3,7 @@ import { loginRequestSchema } from '@app/shared';
 import { errorMessage } from '../../core/api.ts';
 import { homePath, useAuth } from '../../core/auth.tsx';
 import { Icon, Alert, PasswordField, TextField } from '@app/shared/ui';
+import { useLanguage } from '../../core/i18n.tsx';
 import { useAction } from '../../core/data.ts';
 import { useForm } from '../../core/form.ts';
 import { Redirect, useRouter } from '../../core/router.tsx';
@@ -25,6 +26,7 @@ export function LoginPage() {
   const { user, login, initializing } = useAuth();
   const { navigate } = useRouter();
   const form = useForm({ login: '', password: '' });
+  const { t } = useLanguage();
   const submit = useAction(login, {
     onSuccess: (u) => navigate(u.mustChangePassword ? '/change-password' : homePath(u), { replace: true }),
   });
@@ -32,7 +34,7 @@ export function LoginPage() {
   if (!initializing && user) return <Redirect to={homePath(user)} />;
 
   return (
-    <AuthCard title="Учёт удостоверений сотрудников">
+    <AuthCard title={t('appName')}>
       <form
         noValidate
         className="stack"
@@ -42,11 +44,11 @@ export function LoginPage() {
           if (data) submit.run(data);
         }}
       >
-        <TextField label="Логин" autoComplete="username" autoFocus {...form.field('login')} />
-        <PasswordField label="Пароль" autoComplete="current-password" {...form.field('password')} />
+        <TextField label={t('auth.login')} autoComplete="username" autoFocus {...form.field('login')} />
+        <PasswordField label={t('auth.password')} autoComplete="current-password" {...form.field('password')} />
         {submit.error ? <Alert>{errorMessage(submit.error)}</Alert> : null}
         <button type="submit" className="btn btn-primary btn-lg" disabled={submit.pending}>
-          Войти
+          {t('auth.signIn')}
         </button>
       </form>
     </AuthCard>

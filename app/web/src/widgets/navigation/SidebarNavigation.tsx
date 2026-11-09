@@ -1,6 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Icon } from '@app/shared/ui';
 import { Link } from '../../core/router.tsx';
+import { useLanguage } from '../../core/i18n.tsx';
+import { APP_MESSAGES, appMessage } from '../../core/appMessages.ts';
 import { groupHasActivePath, isNavItemActive, subgroupHasActivePath, type NavGroup } from './navigationConfig';
 
 interface SidebarNavigationProps {
@@ -27,6 +29,8 @@ function toggleExpansion(
 }
 
 export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: SidebarNavigationProps) {
+  const { language } = useLanguage();
+  const m = (key: keyof typeof APP_MESSAGES.ru) => appMessage(language, key);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(DEFAULT_EXPANDED_GROUPS);
   const [expandedSubgroups, setExpandedSubgroups] = useState<Record<string, boolean>>(DEFAULT_EXPANDED_SUBGROUPS);
 
@@ -50,7 +54,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
       <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
         <div className="brand">
           <Icon name="badge" />
-          Учёт удостоверений
+          {m('brand')}
         </div>
         <nav className="nav">
           {navGroups.map((group) => {
@@ -143,7 +147,7 @@ export function SidebarNavigation({ navGroups, path, menuOpen, onCloseMenu }: Si
             onClick={() => onCloseMenu()}
           >
             <Icon name="settings" />
-            Настройки
+            {m('settings')}
           </Link>
         </div>
       </aside>

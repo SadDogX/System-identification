@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useCurrentUser } from './core/auth.tsx';
 import { useRouter } from './core/router.tsx';
 import { resolveNavGroups } from './widgets';
+import { useLanguage } from './core/i18n.tsx';
 import { SidebarNavigation } from './widgets/navigation/SidebarNavigation';
 import { Topbar } from './widgets/layout/Topbar';
 
@@ -9,7 +10,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
   const { path } = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const navGroups = resolveNavGroups(user);
+  const { language, translateText } = useLanguage();
+  const navGroups = resolveNavGroups(user, language);
 
   useEffect(() => {
     document.documentElement.dataset.theme = user.uiSettings.theme ?? 'slate';
