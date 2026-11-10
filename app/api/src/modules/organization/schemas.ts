@@ -1,5 +1,6 @@
 import {
   bool,
+  createUserSchema,
   isIsoDate,
   int,
   matches,
@@ -62,6 +63,12 @@ export const assignmentSchema = object({
   reason: optionalText(2000),
 });
 export type AssignmentInput = Infer<typeof assignmentSchema>;
+
+export const personnelCreateSchema = object({
+  user: createUserSchema,
+  assignment: assignmentSchema,
+});
+export type PersonnelCreateInput = Infer<typeof personnelCreateSchema>;
 
 export const mineCoordinatorSchema = object({
   coordinatorEmployeeId: int({ min: 1 }),
@@ -198,6 +205,19 @@ export const wellContractBasisSchema = object(
   },
 );
 export type WellContractBasisInput = Infer<typeof wellContractBasisSchema>;
+
+export const bulkWellContractBasisSchema = object({
+  wellIds: matches(
+    (value): value is number[] =>
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((id) => Number.isInteger(id) && id > 0) &&
+      new Set(value).size === value.length,
+    'Укажите непустой список уникальных идентификаторов скважин',
+  ),
+  basis: wellContractBasisSchema,
+});
+export type BulkWellContractBasisInput = Infer<typeof bulkWellContractBasisSchema>;
 
 export const workExecutionSchema = object({
   wellId: int({ min: 1 }),

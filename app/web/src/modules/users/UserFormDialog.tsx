@@ -77,18 +77,19 @@ export function UserFormDialog({ open, mode, user, personnel = false, assignment
       }
       return api.get<{ user: UserDto }>(`/admin/users/${user!.id}`).then((response) => response.user ?? result);
     }
-    const created = await api.post<{ id: number }>('/admin/users', data);
     if (personnel) {
-      const employee = await api.get<{ id: number }>(`/org/users/${created.id}/employee`);
-      await api.post(`/org/employees/${employee.id}/assignments`, {
-        track,
-        ...(baseId ? { baseId: Number(baseId) } : {}),
-        positionId: Number(form.values.positionId),
-        supervisorEmployeeId: supervisorId ? Number(supervisorId) : null,
-        startsAt,
+      return api.post('/admin/users/personnel', {
+        user: data,
+        assignment: {
+          track,
+          ...(baseId ? { baseId: Number(baseId) } : {}),
+          positionId: Number(form.values.positionId),
+          supervisorEmployeeId: supervisorId ? Number(supervisorId) : null,
+          startsAt,
+        },
       });
     }
-    return created;
+    return api.post('/admin/users', data);
   }, {
     onSuccess: () => {
       invalidate('admin');

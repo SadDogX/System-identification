@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, baseUpdateSchema, contractPermissionSchema, contractSchema, customerSchema, customerUpdateSchema, employeeProfileSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAssignmentSchema, workAssignmentStatusSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema, workTypeUpdateSchema } from './schemas.ts';
+import { accountRolesSchema, addendumSchema, assignmentSchema, baseSchema, baseUpdateSchema, bulkWellContractBasisSchema, contractPermissionSchema, contractSchema, customerSchema, customerUpdateSchema, employeeProfileSchema, mineCoordinatorSchema, mineSchema, statusCatalogSchema, statusCatalogUpdateSchema, wellContractBasisSchema, wellSchema, workAssignmentSchema, workAssignmentStatusSchema, workAuthorizationSchema, workExecutionSchema, workTypeSchema, workTypeUpdateSchema } from './schemas.ts';
 import { adminOnly, signedIn, type AppModule } from '../../core/module.ts';
 import { asyncHandler as h } from '../../core/asyncHandler.ts';
 import { validate } from '../../core/validate.ts';
@@ -34,6 +34,7 @@ organization.post('/bases/:baseId/contracts', validate(contractSchema), h(contro
 organization.post('/contracts/:contractId/addenda', validate(addendumSchema), h(controller.createAddendum));
 organization.put('/contracts/:contractId/work-permissions', validate(contractPermissionSchema), h(controller.setContractPermission));
 organization.put('/contracts/:contractId/addenda/:addendumId/work-permissions', validate(contractPermissionSchema), h(controller.setAddendumPermission));
+organization.post('/contract-bases/bulk', validate(bulkWellContractBasisSchema), h(controller.assignWellBases));
 organization.post('/wells/:wellId/contract-bases', validate(wellContractBasisSchema), h(controller.assignWellBasis));
 organization.post('/work', validate(workExecutionSchema), h(controller.recordWork));
 

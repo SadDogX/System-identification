@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, errorMessage } from '../../core/api.ts';
+import { api } from '../../core/api.ts';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { invalidate, useAction, useQuery } from '../../core/data.ts';
 import { Alert, PageHeader, SelectField, TextField } from '@app/shared/ui';
@@ -136,6 +136,20 @@ export function WorkExecutionPage() {
   }), {
     onSuccess: () => { setMessage('Договорное основание закреплено за скважиной.'); invalidate(`org:work:wells:${mineId}`); },
   });
+  const assignBasisBulk = useAction(() => api.post('/org/contract-bases/bulk', {
+    wellIds: basisWellIds,
+    basis: {
+      ...(addendumId ? { addendumId: Number(addendumId) } : { contractId: Number(contractId) }),
+      startsAt: wellBasisStart,
+      endsAt: wellBasisEnd || null,
+    },
+  }), {
+    onSuccess: () => {
+      setMessage(`Договорное основание закреплено за ${basisWellIds.length} скважинами.`);
+      setBasisWellIds([]);
+      invalidate(`org:work:wells:${mineId}`);
+    },
+  });
   const recordWork = useAction(() => api.post('/org/work', {
     wellId: Number(wellId),
     workTypeId: Number(workTypeId),
@@ -246,7 +260,7 @@ export function WorkExecutionPage() {
 
     <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
       <h2 className="section-title">Скважины и привязка договора</h2>
-      <p className="muted">Чтобы один договор покрывал несколько скважин, выберите нужные скважины ниже и примените договорное основание ко всем за один раз.</p>
+      <p className="muted">Чтобы один договор или допсоглашение покрывал несколько скважин, выберите нужные скважины ниже. Привязка применяется атомарно: при ошибке не сохраняется ни одна привязка.</p>
       <div className="row wrap" style={{ alignItems: 'flex-end' }}>
         <SelectField label="Месторождение" value={mineId} onChange={(event) => {
           setMineId(event.target.value);
@@ -272,20 +286,11 @@ export function WorkExecutionPage() {
           <input type="checkbox" checked={basisWellIds.includes(well.id)} onChange={(event) => setBasisWellIds((current) => event.target.checked ? [...current, well.id] : current.filter((id) => id !== well.id))} />
           <span>{well.name}{well.code ? ` · ${well.code}` : ''}</span>
         </label>)}
-        <button type="button" className="btn" disabled={!basisWellIds.length || !(addendumId || contractId) || assignBasis.pending} onClick={async () => {
+        <button type="button" className="btn" disabled={!basisWellIds.length || !(addendumId || contractId) || assignBasisBulk.pending} onClick={() => {
           setMessage('');
-          for (const id of basisWellIds) {
-            const ok = await api.post(`/org/wells/${id}/contract-bases`, {
-              ...(addendumId ? { addendumId: Number(addendumId) } : { contractId: Number(contractId) }),
-              startsAt: wellBasisStart,
-              endsAt: wellBasisEnd || null,
-            }).then(() => true).catch((error) => { setMessage(`Привязка остановлена на скважине ${id}: ${errorMessage(error)}. Ранее выполненные привязки сохранены.`); return false; });
-            if (!ok) { invalidate(`org:work:wells:${mineId}`); return; }
-          }
-          setMessage(`Договорное основание закреплено за ${basisWellIds.length} скважинами.`);
-          setBasisWellIds([]);
-          invalidate(`org:work:wells:${mineId}`);
+          assignBasisBulk.run();
         }}>Применить к {basisWellIds.length || 'выбранным'} скважинам</button>
+        <ActionError error={assignBasisBulk.error} />
       </div>}
       {wells.length > 0 && <div className="table-wrap" style={{ marginTop: 16 }}><table className="table"><thead><tr><th>Скважина</th><th>Действующее договорное основание</th></tr></thead><tbody>{wells.map((well) => <tr key={well.id}><td>{well.name}</td><td>{well.contractBases?.map((basis) => basis.contract?.number ?? basis.addendum?.number).join(', ') || 'Не привязано'}</td></tr>)}</tbody></table></div>}
       <ActionError error={assignBasis.error} />

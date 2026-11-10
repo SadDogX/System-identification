@@ -99,6 +99,10 @@ export async function assignWellBasis(req: Request, res: Response) {
   res.status(201).json(await service.assignWellBasis(currentUser(req), idParam(req, 'wellId'), req.body));
 }
 
+export async function assignWellBases(req: Request, res: Response) {
+  res.status(201).json(await service.assignWellBases(currentUser(req), req.body));
+}
+
 export async function recordWork(req: Request, res: Response) {
   res.status(201).json(await service.recordWork(currentUser(req), req.body));
 }

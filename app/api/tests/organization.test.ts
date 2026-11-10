@@ -80,6 +80,60 @@ after(stopServer);
 beforeEach(resetDb);
 
 describe('организационные назначения и доступ', () => {
+  it('атомарно создаёт сотрудника вместе с карточкой, системной ролью и назначением', async () => {
+    const ctx = await setup();
+    const position = await prisma.position.findUniqueOrThrow({ where: { name: 'Test EMPLOYEE position' } });
+    const created = await api('POST', '/api/admin/users/personnel', {
+      token: ctx.adminToken,
+      body: {
+        user: { fullName: 'Новый сотрудник', login: 'new-personnel', password: 'password123', positionId: position.id },
+        assignment: {
+          track: 'TRS',
+          baseId: ctx.baseId,
+          positionId: position.id,
+          supervisorEmployeeId: ctx.coordinatorEmployee.id,
+          startsAt: iso(),
+        },
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { login: 'new-personnel' },
+      include: { employee: true, systemRoles: { where: { revokedAt: null }, include: { systemRole: true } } },
+    });
+    assert.equal(created.body.id, user.id);
+    assert.ok(user.employee);
+    assert.ok(user.systemRoles.some((grant) => grant.systemRole.code === 'EMPLOYEE'));
+    const assignment = await prisma.employeeAssignment.findUniqueOrThrow({ where: { activeEmployeeId: user.employee!.id } });
+    assert.equal(assignment.track, 'TRS');
+    assert.equal(assignment.baseId, ctx.baseId);
+    assert.equal(assignment.supervisorEmployeeId, ctx.coordinatorEmployee.id);
+  });
+
+  it('откатывает все записи при ошибке создания кадрового назначения', async () => {
+    const ctx = await setup();
+    const position = await prisma.position.findUniqueOrThrow({ where: { name: 'Test EMPLOYEE position' } });
+    const userCreateAuditCount = await prisma.auditLog.count({ where: { action: 'user.create' } });
+    const created = await api('POST', '/api/admin/users/personnel', {
+      token: ctx.adminToken,
+      body: {
+        user: { fullName: 'Новый сотрудник', login: 'rolled-back-personnel', password: 'password123', positionId: position.id },
+        assignment: {
+          track: 'TRS',
+          baseId: ctx.baseId,
+          positionId: position.id,
+          supervisorEmployeeId: 99999999,
+          startsAt: iso(),
+        },
+      },
+    });
+    assert.equal(created.status, 400, JSON.stringify(created.body));
+    assert.equal(await prisma.user.count({ where: { login: 'rolled-back-personnel' } }), 0);
+    assert.equal(await prisma.employeeAssignment.count({ where: { employee: { user: { login: 'rolled-back-personnel' } } } }), 0);
+    assert.equal(await prisma.userCredential.count({ where: { user: { login: 'rolled-back-personnel' } } }), 0);
+    assert.equal(await prisma.auditLog.count({ where: { action: 'user.create' } }), userCreateAuditCount);
+  });
+
   it('редактирует профиль сотрудника и возвращает контакты в справочнике', async () => {
     const ctx = await setup();
     const updated = await api('PATCH', `/api/org/employees/${ctx.employeeCard.id}/profile`, {
@@ -404,6 +458,78 @@ describe('организационные назначения и доступ', 
 });
 
 describe('договорное основание выполнения работ', () => {
+  it('атомарно привязывает договор ко всем скважинам выбранного набора', async () => {
+    const ctx = await setup();
+    const customer = await api('POST', '/api/org/customers', {
+      token: ctx.adminToken,
+      body: { name: 'Пакетный заказчик', code: 'BULK-CUSTOMER' },
+    });
+    const contractStatus = await prisma.contractStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    const contract = await api('POST', `/api/org/bases/${ctx.baseId}/contracts`, {
+      token: ctx.managerToken,
+      body: { customerId: customer.body.id, statusId: contractStatus.id, number: 'BULK-001', startsAt: iso(-10), endsAt: iso(10) },
+    });
+    const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
+      token: ctx.managerToken,
+      body: { name: 'Месторождение для пакетной привязки' },
+    });
+    const firstWell = await api('POST', `/api/org/mines/${mine.body.id}/wells`, { token: ctx.managerToken, body: { name: 'Пакетная скважина 1' } });
+    const secondWell = await api('POST', `/api/org/mines/${mine.body.id}/wells`, { token: ctx.managerToken, body: { name: 'Пакетная скважина 2' } });
+    const response = await api('POST', '/api/org/contract-bases/bulk', {
+      token: ctx.managerToken,
+      body: {
+        wellIds: [firstWell.body.id, secondWell.body.id],
+        basis: { contractId: contract.body.id, startsAt: iso(-10), endsAt: iso(10) },
+      },
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    assert.equal(response.body.length, 2);
+    assert.equal(await prisma.wellContractBasis.count({ where: { wellId: { in: [firstWell.body.id, secondWell.body.id] } } }), 2);
+    const addendumStatus = await prisma.addendumStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    const addendum = await api('POST', `/api/org/contracts/${contract.body.id}/addenda`, {
+      token: ctx.managerToken,
+      body: { statusId: addendumStatus.id, number: 'BULK-001-A', startsAt: iso(-5), endsAt: iso(5), description: 'Пакетное основание' },
+    });
+    const thirdWell = await api('POST', `/api/org/mines/${mine.body.id}/wells`, { token: ctx.managerToken, body: { name: 'Пакетная скважина 3' } });
+    const fourthWell = await api('POST', `/api/org/mines/${mine.body.id}/wells`, { token: ctx.managerToken, body: { name: 'Пакетная скважина 4' } });
+    const addendumResponse = await api('POST', '/api/org/contract-bases/bulk', {
+      token: ctx.managerToken,
+      body: {
+        wellIds: [thirdWell.body.id, fourthWell.body.id],
+        basis: { addendumId: addendum.body.id, startsAt: iso(-5), endsAt: iso(5) },
+      },
+    });
+    assert.equal(addendumResponse.status, 201, JSON.stringify(addendumResponse.body));
+    assert.equal(addendumResponse.body.length, 2);
+    assert.equal(await prisma.wellContractBasis.count({ where: { wellId: { in: [firstWell.body.id, secondWell.body.id, thirdWell.body.id, fourthWell.body.id] } } }), 4);
+  });
+
+  it('откатывает привязки всего набора, если одна скважина не проходит проверку базы', async () => {
+    const ctx = await setup();
+    const customer = await api('POST', '/api/org/customers', {
+      token: ctx.adminToken,
+      body: { name: 'Заказчик отката', code: 'ROLLBACK-CUSTOMER' },
+    });
+    const contractStatus = await prisma.contractStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    const contract = await api('POST', `/api/org/bases/${ctx.baseId}/contracts`, {
+      token: ctx.managerToken,
+      body: { customerId: customer.body.id, statusId: contractStatus.id, number: 'ROLLBACK-001', startsAt: iso(-10), endsAt: iso(10) },
+    });
+    const validMine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, { token: ctx.managerToken, body: { name: 'Локальное месторождение' } });
+    const validWell = await api('POST', `/api/org/mines/${validMine.body.id}/wells`, { token: ctx.managerToken, body: { name: 'Подходящая скважина' } });
+    const otherMine = await api('POST', `/api/org/bases/${ctx.otherBaseId}/mines`, { token: ctx.adminToken, body: { name: 'Другая база' } });
+    const otherWell = await api('POST', `/api/org/mines/${otherMine.body.id}/wells`, { token: ctx.adminToken, body: { name: 'Скважина другой базы' } });
+    const response = await api('POST', '/api/org/contract-bases/bulk', {
+      token: ctx.managerToken,
+      body: {
+        wellIds: [validWell.body.id, otherWell.body.id],
+        basis: { contractId: contract.body.id, startsAt: iso(-10), endsAt: iso(10) },
+      },
+    });
+    assert.equal(response.status, 403, JSON.stringify(response.body));
+    assert.equal(await prisma.wellContractBasis.count({ where: { wellId: { in: [validWell.body.id, otherWell.body.id] } } }), 0);
+  });
+
   it('по умолчанию запрещает работы без явного разрешения, затем разрешает по договору', async () => {
     const ctx = await setup();
     const customer = await api('POST', '/api/org/customers', {

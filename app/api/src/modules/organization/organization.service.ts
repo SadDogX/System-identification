@@ -12,6 +12,7 @@ import type {
   AssignmentInput,
   BaseInput,
   BaseUpdateInput,
+  BulkWellContractBasisInput,
   ContractInput,
   ContractPermissionInput,
   CustomerInput,
@@ -1049,9 +1050,7 @@ const EXPECTED_SUPERVISOR: Record<string, string> = {
   SHOP_EMPLOYEE: 'SHOP_FOREMAN',
 };
 
-export async function assignEmployee(actor: User, employeeId: number, input: AssignmentInput) {
-  try {
-    return await prisma.$transaction(async (tx) => {
+export async function assignEmployeeInTransaction(tx: Tx, actor: User, employeeId: number, input: AssignmentInput) {
       const employee = await tx.employee.findUnique({
         where: { id: employeeId },
         include: { user: { select: { id: true, fullName: true, isActive: true, isDeleted: true } } },
@@ -1269,7 +1268,13 @@ export async function assignEmployee(actor: User, employeeId: number, input: Ass
         `Для сотрудника ${employee.user.fullName} создано новое назначение${input.reason ? `: ${input.reason}` : '.'}`,
       );
       return { ...next, operationId };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function assignEmployee(actor: User, employeeId: number, input: AssignmentInput) {
+  try {
+    return await prisma.$transaction((tx) => assignEmployeeInTransaction(tx, actor, employeeId, input), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
       throw conflict('Назначение изменилось параллельно; обновите данные и повторите операцию');
@@ -1597,52 +1602,73 @@ export async function setContractPermission(
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
+async function assignWellBasisInTransaction(tx: Tx, actor: User, wellId: number, input: WellContractBasisInput) {
+  const well = await tx.well.findUnique({ where: { id: wellId }, include: { mine: true } });
+  if (!well?.isActive || !well.mine.isActive) throw notFound('Скважина или месторождение не найдены');
+  await assertBaseAccess(tx, actor, well.mine.baseId);
+
+  const startsAt = dateOnly(input.startsAt);
+  const endsAt = input.endsAt ? dateOnly(input.endsAt) : null;
+  const overlap = await tx.wellContractBasis.findFirst({
+    where: {
+      wellId,
+      startsAt: { lte: endsAt ?? new Date('9999-12-31T00:00:00.000Z') },
+      OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
+    },
+  });
+  if (overlap) throw conflict('У скважины уже есть договорное основание на пересекающийся период');
+
+  const contractId = input.contractId ?? null;
+  const addendumId = input.addendumId ?? null;
+  if (contractId) {
+    const contract = await tx.contract.findUnique({ where: { id: contractId } });
+    if (!contract || contract.baseId !== well.mine.baseId) throw badRequest('Договор должен относиться к базе скважины');
+    if (startsAt < contract.startsAt || (endsAt && endsAt > contract.endsAt)) throw badRequest('Период основания должен входить в период договора');
+  } else if (addendumId) {
+    const addendum = await tx.contractAddendum.findUnique({ where: { id: addendumId }, include: { contract: true } });
+    if (!addendum || addendum.contract.baseId !== well.mine.baseId) {
+      throw badRequest('Дополнительное соглашение должно относиться к договору базы скважины');
+    }
+    if (startsAt < addendum.startsAt || (endsAt && endsAt > addendum.endsAt)) {
+      throw badRequest('Период основания должен входить в период дополнительного соглашения');
+    }
+  }
+  const basis = await tx.wellContractBasis.create({
+    data: {
+      wellId,
+      contractId,
+      addendumId,
+      currentWellId: endsAt === null ? wellId : null,
+      startsAt,
+      endsAt,
+      operationId: randomUUID(),
+    },
+  });
+  await audit(tx, { actorId: actor.id, action: 'organization.well.contractBasis', entityType: 'WellContractBasis', entityId: basis.id });
+  return basis;
+}
+
 export async function assignWellBasis(actor: User, wellId: number, input: WellContractBasisInput) {
   try {
+    return await prisma.$transaction((tx) => assignWellBasisInTransaction(tx, actor, wellId, input), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
+      throw conflict('Договорное основание изменилось параллельно; обновите данные и повторите операцию');
+    }
+    throw error;
+  }
+}
+
+export async function assignWellBases(actor: User, input: BulkWellContractBasisInput) {
+  try {
     return await prisma.$transaction(async (tx) => {
-      const well = await tx.well.findUnique({ where: { id: wellId }, include: { mine: true } });
-      if (!well?.isActive || !well.mine.isActive) throw notFound('Скважина или месторождение не найдены');
-      await assertBaseAccess(tx, actor, well.mine.baseId);
-
-      const startsAt = dateOnly(input.startsAt);
-      const endsAt = input.endsAt ? dateOnly(input.endsAt) : null;
-      const overlap = await tx.wellContractBasis.findFirst({
-        where: {
-          wellId,
-          startsAt: { lte: endsAt ?? new Date('9999-12-31T00:00:00.000Z') },
-          OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
-        },
-      });
-      if (overlap) throw conflict('У скважины уже есть договорное основание на пересекающийся период');
-
-      let contractId = input.contractId ?? null;
-      let addendumId = input.addendumId ?? null;
-      if (contractId) {
-        const contract = await tx.contract.findUnique({ where: { id: contractId } });
-        if (!contract || contract.baseId !== well.mine.baseId) throw badRequest('Договор должен относиться к базе скважины');
-        if (startsAt < contract.startsAt || (endsAt && endsAt > contract.endsAt)) throw badRequest('Период основания должен входить в период договора');
-      } else if (addendumId) {
-        const addendum = await tx.contractAddendum.findUnique({ where: { id: addendumId }, include: { contract: true } });
-        if (!addendum || addendum.contract.baseId !== well.mine.baseId) {
-          throw badRequest('Дополнительное соглашение должно относиться к договору базы скважины');
-        }
-        if (startsAt < addendum.startsAt || (endsAt && endsAt > addendum.endsAt)) {
-          throw badRequest('Период основания должен входить в период дополнительного соглашения');
-        }
+      const results = [];
+      for (const wellId of input.wellIds) {
+        results.push(await assignWellBasisInTransaction(tx, actor, wellId, input.basis));
       }
-      const basis = await tx.wellContractBasis.create({
-        data: {
-          wellId,
-          contractId,
-          addendumId,
-          currentWellId: endsAt === null ? wellId : null,
-          startsAt,
-          endsAt,
-          operationId: randomUUID(),
-        },
-      });
-      await audit(tx, { actorId: actor.id, action: 'organization.well.contractBasis', entityType: 'WellContractBasis', entityId: basis.id });
-      return basis;
+      return results;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
