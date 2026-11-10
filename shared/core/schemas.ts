@@ -182,6 +182,10 @@ export const WORK_DAY_STATUSES = ['WORK', 'FREE_SHIFT', 'TRAVEL', 'SICK_LEAVE', 
 export type WorkDayStatus = (typeof WORK_DAY_STATUSES)[number];
 export const workScheduleUpdateSchema = object({ date: isoDate, status: oneOf(WORK_DAY_STATUSES) });
 export type WorkScheduleUpdateRequest = Infer<typeof workScheduleUpdateSchema>;
+export const workScheduleIntervalSchema = object({ startDate: isoDate, endDate: isoDate, status: oneOf(WORK_DAY_STATUSES) });
+export type WorkScheduleIntervalRequest = Infer<typeof workScheduleIntervalSchema>;
+export const workScheduleIntervalDeleteSchema = object({ startDate: isoDate, endDate: isoDate });
+export type WorkScheduleIntervalDeleteRequest = Infer<typeof workScheduleIntervalDeleteSchema>;
 export const workScheduleQuerySchema = object({ userId: optional(int()), year: optional(int({ min: 2020, max: 2100 })) });
 
 

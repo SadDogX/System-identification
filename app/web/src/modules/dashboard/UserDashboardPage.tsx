@@ -1,4 +1,4 @@
-import { CREDENTIAL_STATUSES, STATUS_MESSAGE_KEYS, WORK_DAY_STATUSES, type CredentialStatus, type WorkDayStatus, type WorkScheduleDto } from '@app/shared';
+import { CREDENTIAL_STATUSES, STATUS_MESSAGE_KEYS, WORK_DAY_STATUSES, type CredentialStatus, type WorkDayStatus, type WorkScheduleIntervalsDto } from '@app/shared';
 import { useLanguage } from '../../core/i18n.tsx';
 import { useCurrentUser } from '../../core/auth.tsx';
 import { CredentialCards } from '../credentials/CredentialViews.tsx';
@@ -16,7 +16,7 @@ export function UserDashboardPage() {
   const { language, t } = useLanguage();
   const m = (key: keyof typeof APP_MESSAGES.ru, values?: Record<string, string | number>) => appMessage(language, key, values);
   const { data = [] } = useOwnCredentials();
-  const { data: schedule } = useQuery(`schedule:home:${user.id}`, () => api.get<WorkScheduleDto>('/me/work-schedule', { year: new Date().getFullYear() }));
+  const { data: schedule } = useQuery(`schedule:home:${user.id}`, () => api.get<WorkScheduleIntervalsDto>('/me/work-schedule/intervals', { year: new Date().getFullYear() }));
   const counts = Object.fromEntries(CREDENTIAL_STATUSES.map((status) => [status, data.filter((item) => item.status === status).length])) as Record<CredentialStatus, number>;
   const attention = data.filter((item) => item.status !== 'GREEN').sort((a, b) => (a.daysLeft ?? Infinity) - (b.daysLeft ?? Infinity));
   const firstName = user.fullName.split(' ')[1] || user.fullName;
