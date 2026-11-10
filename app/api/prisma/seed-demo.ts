@@ -1,6 +1,6 @@
 /**
  * Демо-данные для знакомства с системой: сотрудники с разными сроками,
- * сообщения, уведомления, записи журнала.
+ * примеры интервального графика, сообщения, уведомления и записи журнала.
  * Запуск: npm run db:demo (после npm run db:seed). Все действия идут через
  * серверные сервисы — так же, как их выполняли бы админ и сотрудники в интерфейсе.
  */
@@ -12,6 +12,7 @@ import * as catalog from '../src/modules/catalog/catalog.service.ts';
 import * as credentials from '../src/modules/credentials/credentials.service.ts';
 import * as messages from '../src/modules/messages/messages.service.ts';
 import { checkExpiryNotifications } from '../src/modules/notifications/notifications.service.ts';
+import { setScheduleRange } from '../src/modules/workSchedule/schedule.service.ts';
 
 /** Пароль всех демо-пользователей. */
 export const DEMO_PASSWORD = 'demo12345';
@@ -112,6 +113,35 @@ async function ensureDemoContracts(adminUserId: number) {
   }
 }
 
+async function seedDemoSchedules() {
+  const today = todayInTimezone('Europe/Moscow');
+  const fixtures = [
+    { login: 'ivanov', ranges: [{ offset: 0, days: 14, status: 'WORK' as const }, { offset: 14, days: 7, status: 'FREE_SHIFT' as const }] },
+    { login: 'petrov', ranges: [{ offset: 3, days: 5, status: 'VACATION' as const }] },
+    { login: 'sidorova', ranges: [{ offset: 7, days: 3, status: 'TRAINING' as const }] },
+  ];
+
+  for (const fixture of fixtures) {
+    const user = await prisma.user.findUnique({ where: { login: fixture.login }, select: { id: true } });
+    if (!user) continue;
+
+    const [intervalCount, dailyCount] = await Promise.all([
+      prisma.workScheduleInterval.count({ where: { userId: user.id } }),
+      prisma.workScheduleEntry.count({ where: { userId: user.id } }),
+    ]);
+    if (intervalCount > 0 || dailyCount > 0) continue;
+
+    for (const range of fixture.ranges) {
+      await setScheduleRange(user.id, {
+        userId: user.id,
+        startDate: addDays(today, range.offset),
+        endDate: addDays(today, range.offset + range.days - 1),
+        status: range.status,
+      });
+    }
+  }
+}
+
 async function main() {
   const existingDemoCount = await prisma.user.count({ where: { login: { in: EMPLOYEES.map((employee) => employee.login) } } });
   const allDemoUsersExist = existingDemoCount === EMPLOYEES.length;
@@ -119,7 +149,11 @@ async function main() {
   const admin = await prisma.user.findFirst({ where: { isDeleted: false, systemRoles: { some: { revokedAt: null, systemRole: { code: 'ADMIN', isActive: true } } } }, orderBy: { id: 'asc' } });
   if (!admin) throw new Error('Нет администратора — сначала выполните npm run db:seed');
   await ensureDemoContracts(admin.id);
-  if (allDemoUsersExist) { console.log('All demo employees and demo contracts are already present.'); return; }
+  if (allDemoUsersExist) {
+    await seedDemoSchedules();
+    console.log('All demo employees and demo contracts are already present.');
+    return;
+  }
   const settingsTz = 'Europe/Moscow';
   const today = todayInTimezone(settingsTz);
 
@@ -258,6 +292,7 @@ async function main() {
   // Сидорова уже всё прочитала
   await prisma.notification.updateMany({ where: { userId: await byLogin('sidorova') }, data: { readAt: new Date() } });
 
+  await seedDemoSchedules();
   console.log(`Демо-данные загружены: ${created.length} сотрудников, 1 администратор, пароль у всех — ${DEMO_PASSWORD}`);
 }
 
