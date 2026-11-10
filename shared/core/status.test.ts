@@ -74,14 +74,22 @@ describe('даты', () => {
 });
 
 describe('daysLeftText', () => {
-  it('склоняет и различает истёкшие', () => {
+  it('склоняет по правилам русского языка и различает истёкшие', () => {
     assert.equal(daysLeftText(null), 'Не заполнено');
     assert.equal(daysLeftText(0), 'истекает сегодня');
-    assert.equal(daysLeftText(1), 'осталось 1 день');
+    assert.equal(daysLeftText(1), 'остался 1 день');
+    assert.equal(daysLeftText(2), 'осталось 2 дня');
     assert.equal(daysLeftText(3), 'осталось 3 дня');
+    assert.equal(daysLeftText(4), 'осталось 4 дня');
+    assert.equal(daysLeftText(5), 'осталось 5 дней');
     assert.equal(daysLeftText(11), 'осталось 11 дней');
-    assert.equal(daysLeftText(21), 'осталось 21 день');
+    assert.equal(daysLeftText(14), 'осталось 14 дней');
+    assert.equal(daysLeftText(21), 'остался 21 день');
+    assert.equal(daysLeftText(22), 'осталось 22 дня');
     assert.equal(daysLeftText(-3), 'истекло 3 дня назад');
+    assert.equal(daysLeftText(-21), 'истёк 21 день назад');
+    assert.equal(daysLeftText(21, 'en'), '21 days remaining');
+    assert.equal(daysLeftText(1, 'en'), '1 day remaining');
   });
 });
 

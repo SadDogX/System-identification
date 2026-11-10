@@ -59,12 +59,21 @@ export function statusLabels(language: Language = getCurrentLanguage()): Record<
 export const STATUS_LABELS: Record<CredentialStatus, string> = statusLabels();
 export const STATUS_MESSAGE_KEYS: Record<CredentialStatus, string> = { GREEN: 'status.GREEN', YELLOW: 'status.YELLOW', RED: 'status.RED', WHITE: 'status.WHITE' };
 
+function pluralForm(count: number, language: Language): 'One' | 'Few' | 'Many' {
+  if (language !== 'ru') return count === 1 ? 'One' : 'Many';
+  const lastTwoDigits = count % 100;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return 'Many';
+  const lastDigit = count % 10;
+  if (lastDigit === 1) return 'One';
+  if (lastDigit >= 2 && lastDigit <= 4) return 'Few';
+  return 'Many';
+}
+
 export function daysLeftText(daysLeft: number | null, language: Language = getCurrentLanguage()): string {
   if (daysLeft === null) return translate(language, 'status.notFilled');
   if (daysLeft === 0) return translate(language, 'status.expiresToday');
   const count = Math.abs(daysLeft);
-  const key = daysLeft > 0
-    ? (count === 1 ? 'status.remainingOne' : count < 5 ? 'status.remainingFew' : 'status.remainingMany')
-    : (count === 1 ? 'status.expiredOne' : count < 5 ? 'status.expiredFew' : 'status.expiredMany');
+  const form = pluralForm(count, language);
+  const key = `status.${daysLeft > 0 ? 'remaining' : 'expired'}${form}`;
   return translate(language, key, { count });
 }
