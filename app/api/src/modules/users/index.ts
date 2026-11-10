@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import * as profilePhoto from './profilePhoto.service.ts';
 import { createUserSchema, resetPasswordSchema, uiSettingsSchema, updateProfileSchema, updateUserSchema, userListQuerySchema } from '@app/shared';
+import { personnelCreateSchema } from '../organization/schemas.ts';
 import { authenticate, currentUser, requirePasswordChanged } from '../../core/auth.ts';
 import { asyncHandler as h } from '../../core/asyncHandler.ts';
 import { adminOnly, type AppModule } from '../../core/module.ts';
@@ -17,6 +18,7 @@ admin.get('/:id/dependencies', h(users.dependencies));
 admin.post('/:id/unlock', h(users.unlock));
 admin.post('/:id/restore', h(users.restore));
 admin.get('/:id', h(users.getOne));
+admin.post('/personnel', validate(personnelCreateSchema), h(users.createPersonnel));
 admin.post('/', validate(createUserSchema), h(users.create));
 admin.patch('/:id', validate(updateUserSchema), h(users.update));
 admin.delete('/:id', h(users.remove));

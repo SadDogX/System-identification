@@ -31,6 +31,10 @@ export async function create(req: Request, res: Response) {
   res.status(201).json(await users.create(currentUser(req), req.body));
 }
 
+export async function createPersonnel(req: Request, res: Response) {
+  res.status(201).json(await users.createPersonnel(currentUser(req), req.body));
+}
+
 export async function update(req: Request, res: Response) {
   res.json(await users.update(currentUser(req), idParam(req), req.body));
 }

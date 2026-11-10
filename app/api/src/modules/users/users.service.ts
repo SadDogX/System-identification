@@ -18,7 +18,8 @@ import { hashPassword } from '../auth/auth.service.ts';
 import { ensureUserCredentials } from '../credentials/credentials.service.ts';
 import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
-import { ensureEmployeeAndLegacyRole, updateEmployeePosition } from '../organization/organization.service.ts';
+import { assignEmployeeInTransaction, ensureEmployeeAndLegacyRole, updateEmployeePosition } from '../organization/organization.service.ts';
+import type { AssignmentInput, PersonnelCreateInput } from '../organization/schemas.ts';
 
 const PROFILE_FIELDS = ['fullName', 'positionId', 'phone', 'email', 'isActive'] as const;
 const AUDIT_FIELDS = ['fullName', 'login', 'position', 'phone', 'email', 'isActive'];
@@ -43,7 +44,7 @@ async function hasAdminGrant(userId: number) {
 
 async function assertNotLastAdmin(userId: number) {
   const otherAdmins = await prisma.userSystemRole.count({ where: { userId: { not: userId }, revokedAt: null, user: { isDeleted: false, isActive: true }, systemRole: { code: 'ADMIN', isActive: true } } });
-  if (otherAdmins === 0) throw badRequest('?????? ?????? ?????????? ??????????????');
+  if (otherAdmins === 0) throw badRequest('Нельзя лишить систему последнего администратора');
 }
 
 interface ListQuery {
@@ -164,7 +165,7 @@ export async function getById(id: number) {
 
 // ---------- Изменение ----------
 
-export async function create(actor: User, input: CreateUserRequest) {
+async function createUser(actor: User, input: CreateUserRequest, assignment?: AssignmentInput) {
   if (await prisma.user.findUnique({ where: { login: input.login } })) {
     throw conflict('Пользователь с таким логином уже существует');
   }
@@ -182,8 +183,10 @@ export async function create(actor: User, input: CreateUserRequest) {
       },
       include: withPosition,
     });
-    await ensureEmployeeAndLegacyRole(tx, created, actor.id);
-    await ensureUserCredentials(tx, created.id);    await audit(tx, {
+    const employee = await ensureEmployeeAndLegacyRole(tx, created, actor.id);
+    await ensureUserCredentials(tx, created.id);
+    if (assignment) await assignEmployeeInTransaction(tx, actor, employee.id, assignment);
+    await audit(tx, {
       actorId: actor.id,
       action: 'user.create',
       entityType: 'User',
@@ -196,9 +199,17 @@ export async function create(actor: User, input: CreateUserRequest) {
   return toUserDto(await prisma.user.findUniqueOrThrow({ where: { id: user.id }, include: withPosition }));
 }
 
+export async function create(actor: User, input: CreateUserRequest) {
+  return createUser(actor, input);
+}
+
+export async function createPersonnel(actor: User, input: PersonnelCreateInput) {
+  return createUser(actor, input.user, input.assignment);
+}
+
 export async function update(actor: User, id: number, input: UpdateUserRequest) {
   const existing = await findActiveUser(id);
-  if (actor.id === id && input.isActive === false) throw badRequest('?????? ????????????? ?????? ????');
+  if (actor.id === id && input.isActive === false) throw badRequest('Нельзя заблокировать самого себя');
   if ((await hasAdminGrant(id)) && input.isActive === false) await assertNotLastAdmin(id);
   await assertPosition(input.positionId);
   const data: Prisma.UserUncheckedUpdateInput = {};
