@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WorkDayStatus, WorkScheduleAnnualDto } from '@app/shared';
+import type { WorkScheduleAnnualIntervalsDto } from '@app/shared';
+import { expandScheduleIntervals } from '@app/shared';
 import { api } from '../../core/api.ts';
 import { useQuery } from '../../core/data.ts';
 import { useRouter } from '../../core/router.tsx';
@@ -17,9 +18,9 @@ export function AnnualSchedulePage({ team = false }: { team?: boolean }) {
   const scrollHost = useRef<HTMLDivElement>(null);
   const scrollBar = useRef<HTMLDivElement>(null);
   const scrollTrack = useRef<HTMLDivElement>(null);
-  const schedulePath = team ? '/team/work-schedule/annual' : '/admin/work-schedule/annual';
+  const schedulePath = team ? '/team/work-schedule/annual/intervals' : '/admin/work-schedule/annual/intervals';
   const { data, error } = useQuery(`schedule:annual:${team}:${year}`, () =>
-    api.get<WorkScheduleAnnualDto>(schedulePath, { year }),
+    api.get<WorkScheduleAnnualIntervalsDto>(schedulePath, { year }),
   );
   useEffect(() => {
     const viewport = scrollHost.current;
@@ -73,7 +74,7 @@ export function AnnualSchedulePage({ team = false }: { team?: boolean }) {
             </thead>
             <tbody>
               {data?.rows.map((row) => {
-                const statusByDate = new Map<string, WorkDayStatus>(row.entries.map((entry) => [entry.date, entry.status]));
+                const statusByDate = expandScheduleIntervals(row.intervals, `${year}-01-01`, `${year}-12-31`);
                 return <tr key={row.user.id}>
                   <th className="annual-name annual-person" onClick={() => navigate(`${team ? '/admin/team-work-schedule/calendar' : '/admin/work-schedule/calendar'}?userId=${row.user.id}`)}>{row.user.fullName}</th>
                   {allDays.map((date) => {

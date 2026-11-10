@@ -16,6 +16,7 @@ import { toUserDto } from '../../core/mappers.ts';
 import { audit, diffOf } from '../../core/audit.ts';
 import { hashPassword } from '../auth/auth.service.ts';
 import { ensureUserCredentials } from '../credentials/credentials.service.ts';
+import { daysBetween } from '@app/shared';
 import { statusWhere, visibleCredentialWhere } from '../credentials/filters.ts';
 import { getDateContext } from '../../core/settings.ts';
 import { assignEmployeeInTransaction, ensureEmployeeAndLegacyRole, updateEmployeePosition } from '../organization/organization.service.ts';
@@ -135,11 +136,12 @@ export async function archive(query: ListQuery): Promise<Paginated<UserListItemD
 export async function dependencies(id: number) {
   const user = await prisma.user.findUnique({ where: { id }, select: { id: true, fullName: true, isDeleted: true } });
   if (!user) throw notFound('Пользователь не найден');
-  const [credentials, notifications, messages, audit, schedules, radarCards, ifo] = await Promise.all([
+  const [credentials, notifications, messages, audit, scheduleIntervals, radarCards, ifo] = await Promise.all([
     prisma.userCredential.count({ where: { userId: id } }), prisma.notification.count({ where: { userId: id } }),
     prisma.message.count({ where: { senderId: id } }), prisma.auditLog.count({ where: { OR: [{ actorId: id }, { targetUserId: id }] } }),
-    prisma.workScheduleEntry.count({ where: { userId: id } }), prisma.radarCard.count({ where: { userId: id } }), prisma.ifoProposal.count({ where: { proposerId: id } }),
+    prisma.workScheduleInterval.findMany({ where: { userId: id }, select: { startDate: true, endDate: true } }), prisma.radarCard.count({ where: { userId: id } }), prisma.ifoProposal.count({ where: { proposerId: id } }),
   ]);
+  const schedules = scheduleIntervals.reduce((count, interval) => count + daysBetween(interval.startDate.toISOString().slice(0, 10), interval.endDate.toISOString().slice(0, 10)) + 1, 0);
   return { user, dependencies: { credentials, notifications, messages, audit, schedules, radarCards, ifo } };
 }
 

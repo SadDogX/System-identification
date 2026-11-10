@@ -11,6 +11,7 @@
     "generate": "prisma generate",
     "seed": "node --env-file=.env prisma/seed.ts",
     "seed:demo": "node --env-file=.env prisma/seed-demo.ts",
+    "backfill:schedule-intervals": "node --env-file=.env prisma/backfill-work-schedule-intervals.ts",
     "reset": "prisma migrate reset --force",
     "test": "node --env-file=.env.test --test --test-concurrency=1 \"tests/**/*.test.ts\"",
     "studio": "prisma studio --browser none --port 5555"

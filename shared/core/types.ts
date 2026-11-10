@@ -20,6 +20,10 @@ export interface WorkScheduleEntryDto { id: number; userId: number; date: string
 export interface WorkScheduleDto { userId: number; year: number; entries: WorkScheduleEntryDto[]; stats: Record<WorkDayStatus, number> }
 export interface WorkScheduleAnnualRowDto { user: { id: number; fullName: string }; entries: WorkScheduleEntryDto[] }
 export interface WorkScheduleAnnualDto { year: number; rows: WorkScheduleAnnualRowDto[] }
+export interface WorkScheduleIntervalDto { id: number; userId: number; startDate: string; endDate: string; status: WorkDayStatus }
+export interface WorkScheduleIntervalsDto { userId: number; year: number; intervals: WorkScheduleIntervalDto[]; stats: Record<WorkDayStatus, number> }
+export interface WorkScheduleAnnualIntervalRowDto { user: { id: number; fullName: string }; intervals: WorkScheduleIntervalDto[] }
+export interface WorkScheduleAnnualIntervalsDto { year: number; rows: WorkScheduleAnnualIntervalRowDto[] }
 
 export interface RadarCardDto { id: number; userId: number; customerName: string; mainInfo: string; event: string; actionsTaken: string; incidentDate: string; requiredActions: string | null; stoppedWork: boolean; createdAt: string; updatedAt: string; user?: { id: number; fullName: string; login: string } }
 export interface IfoProposalDto { id: number; proposerId: number; title: string; problem: string; proposal: string; expectedBenefit: string; createdAt: string; updatedAt: string; proposer?: { id: number; fullName: string; login: string } }

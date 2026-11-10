@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent, type WheelEvent } from 'react';
-import type { UserDto, WorkDayStatus, WorkScheduleDto } from '@app/shared';
-import { WORK_DAY_STATUSES } from '@app/shared';
+import type { UserDto, WorkDayStatus, WorkScheduleIntervalsDto } from '@app/shared';
+import { groupScheduleDates, groupScheduleDays, expandScheduleIntervals, WORK_DAY_STATUSES } from '@app/shared';
 import { api } from '../../core/api.ts';
 import { useQuery, useAction, invalidate } from '../../core/data.ts';
 import { useRouter } from '../../core/router.tsx';
@@ -24,9 +24,19 @@ export function WorkSchedulePage({ admin = false, team = false }: { admin?: bool
 
   const save = useAction(async () => {
     if (!draft) return;
-    for (const date of deleted) await api.delete(`${team ? '/team' : '/admin'}/work-schedule/${selectedUser}/${date}`);
-    for (const [date, status] of draft) {
-      if (!deleted.has(date) && saved.get(date) !== status) await update.run({ date, status });
+    const root = `${team ? '/team' : '/admin'}/work-schedule`;
+    for (const range of groupScheduleDates([...deleted])) {
+      await api.delete(`${root}/intervals/${selectedUser}`, range);
+    }
+    const changed = groupScheduleDays([...draft]
+      .filter(([date, status]) => !deleted.has(date) && saved.get(date) !== status)
+      .map(([date, status]) => ({ userId: Number(selectedUser), date, status })));
+    for (const interval of changed) {
+      await api.put(`${root}/intervals/${selectedUser}`, {
+        startDate: interval.startDate,
+        endDate: interval.endDate,
+        status: interval.status,
+      });
     }
     setDraft(null);
     setDeleted(new Set());
@@ -36,13 +46,10 @@ export function WorkSchedulePage({ admin = false, team = false }: { admin?: bool
   const users = useQuery(canEdit ? `schedule:users:${team}` : null, () => api.get<UserDto[]>(team ? '/team/work-schedule/users' : '/admin/work-schedule/users'));
   const path = team ? '/team/work-schedule' : admin ? '/admin/work-schedule' : '/me/work-schedule';
   const { data, error } = useQuery(`schedule:${admin}:${team}:${selectedUser}:${year}`, () =>
-    api.get<WorkScheduleDto>(path, { userId: selectedUser, year }),
+    api.get<WorkScheduleIntervalsDto>(`${path}/intervals`, { userId: selectedUser, year }),
   );
-  const saved = new Map((data?.entries ?? []).map((entry) => [entry.date, entry.status]));
+  const saved = expandScheduleIntervals(data?.intervals ?? [], `${year}-01-01`, `${year}-12-31`);
   const map = draft ?? saved;
-  const update = useAction(({ date, status }: { date: string; status: WorkDayStatus }) =>
-    api.put(`${team ? '/team' : '/admin'}/work-schedule/${selectedUser}/${date}`, { date, status }),
-  );
 
   useEffect(() => {
   if (!canEdit || selectedUser || !users.data?.length) return;

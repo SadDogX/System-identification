@@ -890,10 +890,24 @@ describe('team work schedule access', () => {
     const saved = await api('PUT', '/api/team/work-schedule/' + ctx.employee.id + '/' + date, { token: ctx.coordinatorToken, body });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     assert.equal(saved.body.status, 'VACATION');
+    const intervalDate = iso(3);
+    const interval = await api('PUT', '/api/team/work-schedule/intervals/' + ctx.employee.id, {
+      token: ctx.coordinatorToken,
+      body: { startDate: date, endDate: intervalDate, status: 'VACATION' },
+    });
+    assert.equal(interval.status, 200, JSON.stringify(interval.body));
+    const intervalSchedule = await api('GET', '/api/team/work-schedule/intervals?userId=' + ctx.employee.id + '&year=' + Number(date.slice(0, 4)), { token: ctx.coordinatorToken });
+    assert.equal(intervalSchedule.status, 200);
+    assert.ok(intervalSchedule.body.intervals.some((row: { startDate: string; endDate: string; status: string }) => row.startDate <= date && row.endDate >= intervalDate && row.status === 'VACATION'));
+    const intervalAnnual = await api('GET', '/api/team/work-schedule/annual/intervals?year=' + Number(date.slice(0, 4)), { token: ctx.coordinatorToken });
+    assert.equal(intervalAnnual.status, 200);
+    assert.ok(intervalAnnual.body.rows.find((row: { user: { id: number } }) => row.user.id === ctx.employee.id).intervals.length > 0);
     const outsider = await createUser('USER');
     assert.equal((await api('GET', '/api/team/work-schedule?userId=' + outsider.id, { token: ctx.coordinatorToken })).status, 403);
     assert.equal((await api('PUT', '/api/team/work-schedule/' + outsider.id + '/' + date, { token: ctx.managerToken, body })).status, 403);
+    assert.equal((await api('PUT', '/api/team/work-schedule/intervals/' + outsider.id, { token: ctx.managerToken, body: { startDate: date, endDate: intervalDate, status: 'VACATION' } })).status, 403);
     assert.equal((await api('DELETE', '/api/team/work-schedule/' + outsider.id + '/' + date, { token: ctx.coordinatorToken })).status, 403);
+    assert.equal((await api('DELETE', '/api/team/work-schedule/intervals/' + outsider.id + '?startDate=' + date + '&endDate=' + intervalDate, { token: ctx.coordinatorToken })).status, 403);
     assert.equal((await api('GET', '/api/team/work-schedule/users', { token: await tokenFor(ctx.employee.login) })).status, 403);
   });
 });

@@ -104,7 +104,7 @@ export const api = {
   post: <T = void>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T = void>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T = void>(path: string, body?: unknown) => request<T>('PUT', path, body),
-  delete: <T = void>(path: string) => request<T>('DELETE', path),
+  delete: <T = void>(path: string, query?: Query) => request<T>('DELETE', path, undefined, query),
   /** Загрузка файла в теле запроса. */
   upload: <T = void>(path: string, file: Blob) => request<T>('PUT', path, file),
   /** Скачивание файла с авторизацией (для фото удостоверений). */
