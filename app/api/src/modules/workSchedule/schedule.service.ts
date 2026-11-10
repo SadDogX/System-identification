@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { addDays, daysBetween, isIsoDate, type WorkDayStatus } from '@app/shared';
+import { addDays, daysBetween, groupScheduleDays, isIsoDate, type WorkDayStatus } from '@app/shared';
 import { prisma, type Tx } from '../../core/db.ts';
 import { badRequest, notFound } from '../../core/errors.ts';
 
@@ -200,21 +200,73 @@ export async function replaceScheduleRanges(replacements: ScheduleRangeReplaceme
   });
 }
 
+async function getLegacyDailyIntervals(userId: number, startDate: string, endDate: string) {
+  const entries = await prisma.workScheduleEntry.findMany({
+    where: { userId, date: { gte: asDate(startDate), lte: asDate(endDate) } },
+    orderBy: { date: 'asc' },
+  });
+  if (entries.length === 0) return [];
+  return groupScheduleDays(entries.map((entry) => ({ userId: entry.userId, date: asIsoDate(entry.date), status: entry.status }))).map((interval) => ({
+    id: 0,
+    userId: interval.userId,
+    startDate: asDate(interval.startDate),
+    endDate: asDate(interval.endDate),
+    status: interval.status,
+  }));
+}
+
+async function getLegacyAnnualIntervals(userIds: number[], startDate: string, endDate: string) {
+  const entries = await prisma.workScheduleEntry.findMany({
+    where: { userId: { in: userIds }, date: { gte: asDate(startDate), lte: asDate(endDate) } },
+    orderBy: [{ userId: 'asc' }, { date: 'asc' }],
+  });
+  if (entries.length === 0) return [];
+  const byUser = new Map<number, typeof entries>();
+  for (const entry of entries) {
+    const current = byUser.get(entry.userId) ?? [];
+    current.push(entry);
+    byUser.set(entry.userId, current);
+  }
+  const merged: Array<{ id: number; userId: number; startDate: Date; endDate: Date; status: WorkDayStatus }> = [];
+  for (const userId of userIds) {
+    const daily = byUser.get(userId) ?? [];
+    if (!daily.length) continue;
+    for (const interval of groupScheduleDays(daily.map((entry) => ({ userId: entry.userId, date: asIsoDate(entry.date), status: entry.status })))) {
+      merged.push({
+        id: 0,
+        userId: interval.userId,
+        startDate: asDate(interval.startDate),
+        endDate: asDate(interval.endDate),
+        status: interval.status,
+      });
+    }
+  }
+  return merged;
+}
+
 export async function getScheduleIntervals(userId: number, startDate: string, endDate: string) {
   assertRange(startDate, endDate);
-  return prisma.workScheduleInterval.findMany({
+  const intervals = await prisma.workScheduleInterval.findMany({
     where: { userId, startDate: { lte: asDate(endDate) }, endDate: { gte: asDate(startDate) } },
     orderBy: { startDate: 'asc' },
   });
+  if (intervals.length > 0) return intervals;
+  return getLegacyDailyIntervals(userId, startDate, endDate);
 }
 
 export async function getAnnualScheduleIntervals(userIds: number[], startDate: string, endDate: string) {
   assertRange(startDate, endDate);
   if (userIds.length === 0) return [];
-  return prisma.workScheduleInterval.findMany({
+  const intervals = await prisma.workScheduleInterval.findMany({
     where: { userId: { in: userIds }, startDate: { lte: asDate(endDate) }, endDate: { gte: asDate(startDate) } },
     orderBy: [{ userId: 'asc' }, { startDate: 'asc' }],
   });
+  if (intervals.length === 0) return getLegacyAnnualIntervals(userIds, startDate, endDate);
+  const covered = new Set(intervals.map(({ userId }) => userId));
+  const missing = userIds.filter((userId) => !covered.has(userId));
+  if (missing.length === 0) return intervals;
+  const fallback = await getLegacyAnnualIntervals(missing, startDate, endDate);
+  return [...intervals, ...fallback].sort((a, b) => a.userId - b.userId || a.startDate.getTime() - b.startDate.getTime());
 }
 
 export function intervalDto(row: {
