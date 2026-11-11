@@ -58,6 +58,23 @@ describe('interval work schedule API', () => {
     assert.deepEqual(legacy.body.entries.map((row: { date: string }) => row.date), ['2024-02-27', '2024-03-02']);
   });
 
+  it('returns empty annual intervals for employees without any interval records', async () => {
+    const admin = await createUser('ADMIN');
+    const token = await tokenFor(admin.login);
+    const employee = await createUser('EMPLOYEE');
+    await prisma.workScheduleEntry.createMany({
+      data: [
+        { userId: employee.id, date: new Date('2024-01-15T00:00:00.000Z'), status: 'WORK' },
+        { userId: employee.id, date: new Date('2024-01-16T00:00:00.000Z'), status: 'WORK' },
+      ],
+    });
+    const annual = await api('GET', '/api/admin/work-schedule/annual/intervals?year=2024', { token });
+    assert.equal(annual.status, 200, JSON.stringify(annual.body));
+    const row = annual.body.rows.find((entry: { user: { id: number } }) => entry.user.id === employee.id);
+    assert.ok(row, 'annual intervals should include the employee even without any intervals');
+    assert.deepEqual(row.intervals, []);
+  });
+
   it('serializes overlapping concurrent writes and rejects reversed or invalid dates', async () => {
     const admin = await createUser('ADMIN');
     const token = await tokenFor(admin.login);

@@ -901,7 +901,12 @@ describe('team work schedule access', () => {
     assert.ok(intervalSchedule.body.intervals.some((row: { startDate: string; endDate: string; status: string }) => row.startDate <= date && row.endDate >= intervalDate && row.status === 'VACATION'));
     const intervalAnnual = await api('GET', '/api/team/work-schedule/annual/intervals?year=' + Number(date.slice(0, 4)), { token: ctx.coordinatorToken });
     assert.equal(intervalAnnual.status, 200);
-    assert.ok(intervalAnnual.body.rows.find((row: { user: { id: number } }) => row.user.id === ctx.employee.id).intervals.length > 0);
+    const employeeRow = intervalAnnual.body.rows.find((row: { user: { id: number } }) => row.user.id === ctx.employee.id);
+    assert.ok(employeeRow, 'team annual intervals should include the employee in scope');
+    assert.ok(employeeRow.intervals.length > 0);
+    const coordinatorRow = intervalAnnual.body.rows.find((row: { user: { id: number } }) => row.user.id === ctx.coordinator.id);
+    assert.ok(coordinatorRow, 'team annual intervals should still include managers without interval data');
+    assert.deepEqual(coordinatorRow.intervals, []);
     const outsider = await createUser('USER');
     assert.equal((await api('GET', '/api/team/work-schedule?userId=' + outsider.id, { token: ctx.coordinatorToken })).status, 403);
     assert.equal((await api('PUT', '/api/team/work-schedule/' + outsider.id + '/' + date, { token: ctx.managerToken, body })).status, 403);
