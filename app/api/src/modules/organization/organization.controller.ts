@@ -28,6 +28,10 @@ export async function listWells(req: Request, res: Response) {
   res.json(await service.listWells(currentUser(req), idParam(req, 'mineId')));
 }
 
+export async function listCustomerSiteWorksForWell(req: Request, res: Response) {
+  res.json(await service.listCustomerSiteWorksForWell(currentUser(req), idParam(req, 'wellId')));
+}
+
 export async function listContracts(req: Request, res: Response) {
   res.json(await service.listContracts(currentUser(req), idParam(req, 'baseId')));
 }
@@ -62,6 +66,38 @@ export async function updateCustomer(req: Request, res: Response) {
 
 export async function createContract(req: Request, res: Response) {
   res.status(201).json(await service.createContract(currentUser(req), idParam(req, 'baseId'), req.body));
+}
+
+export async function updateContract(req: Request, res: Response) {
+  res.json(await service.updateContract(currentUser(req), idParam(req, 'contractId'), req.body));
+}
+
+export async function listContractDocuments(req: Request, res: Response) {
+  res.json(await service.listContractDocuments(currentUser(req), idParam(req, 'contractId')));
+}
+
+export async function uploadContractDocument(req: Request, res: Response) {
+  let fileName: string;
+  try {
+    fileName = decodeURIComponent(req.header('X-File-Name') ?? '');
+  } catch {
+    throw badRequest('Имя файла имеет неверный формат');
+  }
+  res.status(201).json(await service.uploadContractDocument(currentUser(req), idParam(req, 'contractId'), fileName, req.body));
+}
+
+export async function downloadContractDocument(req: Request, res: Response) {
+  const document = await service.getContractDocument(currentUser(req), idParam(req, 'contractId'), idParam(req, 'documentId'));
+  res.setHeader('Content-Type', document.mime);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(document.name)}`);
+  res.sendFile(document.path);
+}
+
+export async function deleteContractDocument(req: Request, res: Response) {
+  await service.deleteContractDocument(currentUser(req), idParam(req, 'contractId'), idParam(req, 'documentId'));
+  res.status(204).end();
 }
 
 export async function createAddendum(req: Request, res: Response) {
@@ -117,22 +153,6 @@ export async function createWell(req: Request, res: Response) {
 
 export async function updateEmployeeProfile(req: Request, res: Response) {
   res.json(await service.updateEmployeeProfile(currentUser(req), idParam(req, 'employeeId'), req.body));
-}
-
-export async function listWorkAssignments(req: Request, res: Response) {
-  res.json(await service.listWorkAssignments(currentUser(req)));
-}
-
-export async function createWorkAssignment(req: Request, res: Response) {
-  res.status(201).json(await service.createWorkAssignment(currentUser(req), req.body));
-}
-
-export async function updateWorkAssignment(req: Request, res: Response) {
-  res.json(await service.updateWorkAssignment(currentUser(req), idParam(req, 'workAssignmentId'), req.body));
-}
-
-export async function updateWorkAssignmentStatus(req: Request, res: Response) {
-  res.json(await service.updateWorkAssignmentStatus(currentUser(req), idParam(req, 'workAssignmentId'), req.body));
 }
 
 export async function listStatuses(req: Request, res: Response) {

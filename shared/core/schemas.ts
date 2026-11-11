@@ -153,6 +153,7 @@ export const credentialListQuerySchema = object({
 export const radarCardSchema = object({
   incidentDate: isoDate,
   customerName: text({ max: 200, message: 'Укажите заказчика' }),
+  customerId: optionalId(),
   userId: optionalId(),
   mainInfo: text({ max: 5000, message: 'Укажите основную информацию' }),
   event: text({ max: 10000, message: 'Опишите событие' }),

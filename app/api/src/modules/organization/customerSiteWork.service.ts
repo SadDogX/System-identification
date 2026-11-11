@@ -87,6 +87,41 @@ export async function list(actor: User) {
   });
 }
 
+export async function listExecutions(actor: User, customerSiteWorkId: number) {
+  const actorRoles = await roles(prisma, actor.id);
+  const isAdministrator = admin(actor, actorRoles);
+  if (!isAdministrator && !actorRoles.includes('COORDINATOR')) throw forbidden();
+  const employee = await prisma.employee.findUnique({ where: { userId: actor.id } });
+  if (!employee && !isAdministrator) throw forbidden();
+  const mineIds = employee ? await permittedMineIds(prisma, employee.id) : [];
+  const siteWork = await prisma.customerSiteWork.findFirst({
+    where: { id: customerSiteWorkId, ...(isAdministrator ? {} : { mineId: { in: mineIds } }) },
+    select: { id: true },
+  });
+  if (!siteWork) throw notFound('Работа на объекте заказчика не найдена');
+  const executions = await prisma.workExecution.findMany({
+    where: { customerSiteWorkId },
+    include: {
+      workType: { select: { name: true } },
+      status: { select: { name: true } },
+      contract: { select: { number: true } },
+      addendum: { select: { number: true } },
+      responsible: { include: { employee: { select: { user: { select: { fullName: true } } } } } },
+    },
+    orderBy: [{ performedAt: 'desc' }, { id: 'desc' }],
+  });
+  return executions.map((execution) => ({
+    id: execution.id,
+    performedAt: execution.performedAt.toISOString().slice(0, 10),
+    workType: execution.workType,
+    status: execution.status,
+    contract: execution.contract,
+    addendum: execution.addendum,
+    description: execution.description,
+    responsible: execution.responsible.map((item) => item.employee.user.fullName),
+  }));
+}
+
 export async function create(actor: User, input: CustomerSiteWorkInput) {
   return prisma.$transaction(async (tx) => {
     const actorRoles = await roles(tx, actor.id);

@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { todayInTimezone } from '@app/shared';
 import { prisma } from '../src/core/db.ts';
-import { api, createUser, resetDb, startServer, stopServer, tokenFor } from './helpers.ts';
+import { api, createUser, resetDb, startServer, stopServer, tokenFor, url } from './helpers.ts';
 
 const iso = (offset = 0) => {
   const date = new Date(`${todayInTimezone('Europe/Moscow')}T00:00:00.000Z`);
@@ -530,7 +530,7 @@ describe('договорное основание выполнения рабо�
     assert.equal(await prisma.wellContractBasis.count({ where: { wellId: { in: [validWell.body.id, otherWell.body.id] } } }), 0);
   });
 
-  it('по умолчанию запрещает работы без явного разрешения, затем разрешает по договору', async () => {
+  it('по умолчанию запрещает работы без явного разрешения, затем разрешает по договору (contract lifecycle)', async () => {
     const ctx = await setup();
     const customer = await api('POST', '/api/org/customers', {
       token: ctx.adminToken,
@@ -554,13 +554,24 @@ describe('договорное основание выполнения рабо�
       },
     });
     assert.equal(contract.status, 201, JSON.stringify(contract.body));
+    const forbiddenUpdate = await api('PATCH', `/api/org/contracts/${contract.body.id}`, {
+      token: ctx.coordinatorToken,
+      body: {
+        customerId: customer.body.id,
+        statusId: contractStatus.id,
+        number: 'N-001',
+        startsAt: iso(-10),
+        endsAt: iso(10),
+      },
+    });
+    assert.equal(forbiddenUpdate.status, 403);
     const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
       token: ctx.managerToken,
       body: { name: 'Месторождение договоров' },
     });
     const well = await api('POST', `/api/org/mines/${mine.body.id}/wells`, {
       token: ctx.managerToken,
-      body: { name: 'Скважина 1', code: 'W-1' },
+      body: { name: 'Скважина 1', code: 'W-1', clusterNumber: 'CL-1' },
     });
     const basis = await api('POST', `/api/org/wells/${well.body.id}/contract-bases`, {
       token: ctx.managerToken,
@@ -581,13 +592,58 @@ describe('договорное основание выполнения рабо�
     assert.equal(allowed.status, 200);
     assert.equal(allowed.body.authorized, true);
     const workStatus = await prisma.workStatus.findUniqueOrThrow({ where: { code: 'COMPLETED' } });
+    const siteWork = await api('POST', '/api/org/customer-site-works', {
+      token: ctx.adminToken,
+      body: {
+        name: 'Работа заказчика по договору',
+        customerId: customer.body.id,
+        mineId: mine.body.id,
+        wellId: well.body.id,
+        startsAt: iso(-1),
+        expectedEndAt: iso(2),
+        supervisorEmployeeId: ctx.employeeCard.id,
+      },
+    });
+    assert.equal(siteWork.status, 201, JSON.stringify(siteWork.body));
+    const siteWorkOptions = await api('GET', `/api/org/wells/${well.body.id}/customer-site-works`, { token: ctx.managerToken });
+    assert.equal(siteWorkOptions.status, 200);
+    assert.ok(siteWorkOptions.body.some((item: { id: number }) => item.id === siteWork.body.id));
     const recorded = await api('POST', '/api/org/work', {
       token: ctx.managerToken,
-      body: { ...request, statusId: workStatus.id, responsibleEmployeeIds: [ctx.employeeCard.id] },
+      body: { ...request, customerSiteWorkId: siteWork.body.id, statusId: workStatus.id, responsibleEmployeeIds: [ctx.employeeCard.id] },
     });
     assert.equal(recorded.status, 201, JSON.stringify(recorded.body));
     assert.equal(recorded.body.contractId, contract.body.id);
     assert.equal(recorded.body.responsible.length, 1);
+    assert.equal(recorded.body.customerSiteWorkId, siteWork.body.id);
+    const executionHistory = await api('GET', `/api/org/customer-site-works/${siteWork.body.id}/executions`, { token: ctx.adminToken });
+    assert.equal(executionHistory.status, 200);
+    assert.equal(executionHistory.body.length, 1);
+    assert.equal(executionHistory.body[0].id, recorded.body.id);
+    assert.equal(executionHistory.body[0].contract.number, 'N-001');
+    const deniedHistory = await api('GET', `/api/org/customer-site-works/${siteWork.body.id}/executions`, { token: await tokenFor(ctx.employee.login) });
+    assert.equal(deniedHistory.status, 403);
+    const outOfScopeHistory = await api('GET', `/api/org/customer-site-works/${siteWork.body.id}/executions`, { token: await tokenFor(ctx.replacementCoordinator.login) });
+    assert.equal(outOfScopeHistory.status, 404);
+    const otherCustomer = await prisma.customer.create({ data: { name: 'Другой заказчик' } });
+    const otherCustomerWork = await api('POST', '/api/org/customer-site-works', {
+      token: ctx.adminToken,
+      body: {
+        name: 'Работа другого заказчика',
+        customerId: otherCustomer.id,
+        mineId: mine.body.id,
+        wellId: well.body.id,
+        startsAt: iso(-1),
+        expectedEndAt: iso(2),
+        supervisorEmployeeId: ctx.employeeCard.id,
+      },
+    });
+    assert.equal(otherCustomerWork.status, 201, JSON.stringify(otherCustomerWork.body));
+    const wrongCustomerLink = await api('POST', '/api/org/work', {
+      token: ctx.managerToken,
+      body: { ...request, customerSiteWorkId: otherCustomerWork.body.id, statusId: workStatus.id },
+    });
+    assert.equal(wrongCustomerLink.status, 400);
 
     const addendumStatus = await prisma.addendumStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
     const addendum = await api('POST', `/api/org/contracts/${contract.body.id}/addenda`, {
@@ -634,242 +690,150 @@ describe('договорное основание выполнения рабо�
       body: { ...request, wellId: secondWell.body.id },
     });
     assert.equal(allowedByAddendum.body.authorized, true);
+
+    const invalidPeriod = await api('PATCH', `/api/org/contracts/${contract.body.id}`, {
+      token: ctx.managerToken,
+      body: {
+        customerId: customer.body.id,
+        statusId: contractStatus.id,
+        number: 'N-001',
+        startsAt: iso(1),
+        endsAt: iso(10),
+      },
+    });
+    assert.equal(invalidPeriod.status, 400);
+    const addendumParent = await api('POST', `/api/org/bases/${ctx.baseId}/contracts`, {
+      token: ctx.managerToken,
+      body: { customerId: customer.body.id, statusId: contractStatus.id, number: 'N-002', startsAt: iso(-10), endsAt: iso(10) },
+    });
+    const activeAddendumStatus = await prisma.addendumStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    const rangeAddendum = await api('POST', `/api/org/contracts/${addendumParent.body.id}/addenda`, {
+      token: ctx.managerToken,
+      body: { statusId: activeAddendumStatus.id, number: 'N-002-1', startsAt: iso(-5), endsAt: iso(5), description: 'Период основания' },
+    });
+    assert.equal(rangeAddendum.status, 201);
+    const excludesAddendum = await api('PATCH', `/api/org/contracts/${addendumParent.body.id}`, {
+      token: ctx.managerToken,
+      body: { customerId: customer.body.id, statusId: contractStatus.id, number: 'N-002', startsAt: iso(-10), endsAt: iso(4) },
+    });
+    assert.equal(excludesAddendum.status, 400);
+    const closeStatus = await prisma.contractStatus.findUniqueOrThrow({ where: { code: 'CLOSED' } });
+    const closed = await api('PATCH', `/api/org/contracts/${contract.body.id}`, {
+      token: ctx.managerToken,
+      body: {
+        customerId: customer.body.id,
+        statusId: closeStatus.id,
+        number: 'N-001',
+        startsAt: iso(-10),
+        endsAt: iso(10),
+      },
+    });
+    assert.equal(closed.status, 200, JSON.stringify(closed.body));
+    assert.equal(closed.body.status.code, 'CLOSED');
+    assert.equal(await prisma.workExecution.count({ where: { contractId: contract.body.id } }), 1);
+    const noLongerAllowed = await api('POST', '/api/org/work/authorize', { token: ctx.managerToken, body: request });
+    assert.equal(noLongerAllowed.body.authorized, false);
+    assert.ok(await prisma.auditLog.findFirst({ where: { action: 'organization.contract.update', entityId: contract.body.id } }));
+  });
+
+  it('uploads, lists, downloads and removes an audited contract document with base-scoped access', async () => {
+    const ctx = await setup();
+    const customer = await api('POST', '/api/org/customers', {
+      token: ctx.adminToken,
+      body: { name: 'Документный заказчик', code: 'DOC-CUSTOMER' },
+    });
+    const status = await prisma.contractStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    const contract = await api('POST', `/api/org/bases/${ctx.baseId}/contracts`, {
+      token: ctx.managerToken,
+      body: { customerId: customer.body.id, statusId: status.id, number: 'DOC-001', startsAt: iso(-1), endsAt: iso(10) },
+    });
+    const content = Buffer.from('%PDF-1.4\ncontract test\n%%EOF', 'ascii');
+    const uploaded = await fetch(url(`/api/org/contracts/${contract.body.id}/documents`), {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${ctx.managerToken}`,
+        'Content-Type': 'application/pdf',
+        'X-File-Name': encodeURIComponent('Подписанный договор.pdf'),
+      },
+      body: content,
+    });
+    assert.equal(uploaded.status, 201);
+    const document = await uploaded.json() as { id: number; name: string; mime: string };
+    assert.equal(document.name, 'Подписанный договор.pdf');
+    assert.equal(document.mime, 'application/pdf');
+    const list = await api('GET', `/api/org/contracts/${contract.body.id}/documents`, { token: ctx.managerToken });
+    assert.deepEqual(list.body.map((item: { id: number }) => item.id), [document.id]);
+    const downloaded = await fetch(url(`/api/org/contracts/${contract.body.id}/documents/${document.id}`), {
+      headers: { Authorization: `Bearer ${ctx.managerToken}` },
+    });
+    assert.equal(downloaded.status, 200);
+    assert.equal(downloaded.headers.get('content-type'), 'application/pdf');
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), content);
+    const forbiddenList = await api('GET', `/api/org/contracts/${contract.body.id}/documents`, { token: await tokenFor(ctx.employee.login) });
+    assert.equal(forbiddenList.status, 403);
+    const removed = await api('DELETE', `/api/org/contracts/${contract.body.id}/documents/${document.id}`, { token: ctx.managerToken });
+    assert.equal(removed.status, 204);
+    assert.equal(await prisma.contractDocument.count({ where: { contractId: contract.body.id } }), 0);
+    assert.ok(await prisma.auditLog.findFirst({ where: { action: 'organization.contract.document.upload', entityId: document.id } }));
+    assert.ok(await prisma.auditLog.findFirst({ where: { action: 'organization.contract.document.delete', entityId: document.id } }));
   });
 });
 
-describe('планирование выездов на работы', () => {
-  it('не допускает пересечение выездов одного сотрудника и позволяет редактировать только план', async () => {
-    const ctx = await setup();
-    const workType = await prisma.workType.create({
-      data: { code: 'OVERLAP_TEST', name: 'Плановая работа', requiresContractPermission: true },
-    });
-    const planInput = {
-      baseId: ctx.baseId,
-      locationType: 'BASE',
-      workTypeId: workType.id,
-      startsAt: iso(1),
-      endsAt: iso(3),
-      responsibleEmployeeIds: [ctx.managerEmployee.id, ctx.employeeCard.id],
-    };
-    const first = await api('POST', '/api/org/work-assignments', { token: ctx.managerToken, body: planInput });
-    assert.equal(first.status, 201, JSON.stringify(first.body));
-
-    const touchingDates = await api('POST', '/api/org/work-assignments', {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(3), endsAt: iso(4) },
-    });
-    assert.equal(touchingDates.status, 409);
-
-    const second = await api('POST', '/api/org/work-assignments', {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(4), endsAt: iso(5) },
-    });
-    assert.equal(second.status, 201, JSON.stringify(second.body));
-    const conflictingEdit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(2), endsAt: iso(4) },
-    });
-    assert.equal(conflictingEdit.status, 409);
-
-    const edit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
-    });
-    assert.equal(edit.status, 200, JSON.stringify(edit.body));
-    assert.equal(edit.body.startsAt.slice(0, 10), iso(6));
-    const auditCount = await prisma.auditLog.count({
-      where: { action: 'organization.workAssignment.update', entityId: second.body.id },
-    });
-    const unchangedEdit = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
-    });
-    assert.equal(unchangedEdit.status, 200);
-    assert.equal(
-      await prisma.auditLog.count({
-        where: { action: 'organization.workAssignment.update', entityId: second.body.id },
-      }),
-      auditCount,
-    );
-
-    const skipToCompleted = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'COMPLETED' },
-    });
-    assert.equal(skipToCompleted.status, 409);
-    const started = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'IN_PROGRESS' },
-    });
-    assert.equal(started.status, 200);
-    assert.equal(started.body.status.code, 'IN_PROGRESS');
-
-    const editStarted = await api('PATCH', `/api/org/work-assignments/${second.body.id}`, {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
-    });
-    assert.equal(editStarted.status, 409);
-    const cancelled = await api('PATCH', `/api/org/work-assignments/${second.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'CANCELLED' },
-    });
-    assert.equal(cancelled.status, 200);
-    assert.equal(cancelled.body.status.code, 'CANCELLED');
-
-    const replacement = await api('POST', '/api/org/work-assignments', {
-      token: ctx.managerToken,
-      body: { ...planInput, startsAt: iso(6), endsAt: iso(7) },
-    });
-    assert.equal(replacement.status, 201, JSON.stringify(replacement.body));
-    const inProgress = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'IN_PROGRESS' },
-    });
-    assert.equal(inProgress.status, 200);
-    const completed = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'COMPLETED' },
-    });
-    assert.equal(completed.status, 200);
-    assert.equal(completed.body.status.code, 'COMPLETED');
-    const reopen = await api('PATCH', `/api/org/work-assignments/${replacement.body.id}/status`, {
-      token: ctx.managerToken,
-      body: { statusCode: 'CANCELLED' },
-    });
-    assert.equal(reopen.status, 409);
-  });
-
-  it('запрещает участнику команды менять план и статус выезда', async () => {
-    const ctx = await setup();
-    const workType = await prisma.workType.create({
-      data: { code: 'ACCESS_TEST', name: 'План на проверку доступа', requiresContractPermission: true },
-    });
-    const input = {
-      baseId: ctx.baseId,
-      locationType: 'BASE',
-      workTypeId: workType.id,
-      startsAt: iso(1),
-      endsAt: iso(2),
-      responsibleEmployeeIds: [ctx.managerEmployee.id, ctx.employeeCard.id],
-    };
-    const plan = await api('POST', '/api/org/work-assignments', { token: ctx.managerToken, body: input });
-    assert.equal(plan.status, 201, JSON.stringify(plan.body));
-    const employeeToken = await tokenFor(ctx.employee.login);
-    const edit = await api('PATCH', `/api/org/work-assignments/${plan.body.id}`, {
-      token: employeeToken,
-      body: { ...input, endsAt: iso(3) },
-    });
-    assert.equal(edit.status, 403);
-    const status = await api('PATCH', `/api/org/work-assignments/${plan.body.id}/status`, {
-      token: employeeToken,
-      body: { statusCode: 'IN_PROGRESS' },
-    });
-    assert.equal(status.status, 403);
-  });
-
-  it('проверяет руководителя команды, место работы и ограничивает личный список сотрудника', async () => {
-    const ctx = await setup();
-    const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
-      token: ctx.managerToken,
-      body: { name: 'Месторождение выездов', code: 'TRIPS-1' },
-    });
-    assert.equal(mine.status, 201);
-    const well = await api('POST', `/api/org/mines/${mine.body.id}/wells`, {
-      token: ctx.managerToken,
-      body: { name: 'Скважина выездов', clusterNumber: 'К-12' },
-    });
-    assert.equal(well.status, 201);
-    const workType = await prisma.workType.create({
-      data: { code: 'PLANNED_TEST', name: 'Спуск ОК', requiresContractPermission: true },
-    });
-
-    const missingLeader = await api('POST', '/api/org/work-assignments', {
-      token: ctx.managerToken,
-      body: {
-        baseId: ctx.baseId,
-        locationType: 'WELL',
-        mineId: mine.body.id,
-        wellId: well.body.id,
-        workTypeId: workType.id,
-        startsAt: iso(1),
-        endsAt: iso(3),
-        responsibleEmployeeIds: [ctx.employeeCard.id],
+describe('заказчики карт «Радар»', () => {
+  it('предлагает общий справочник, сохраняет необязательную связь и не затирает старое имя (radar customer directory)', async () => {
+    const user = await createUser('EMPLOYEE');
+    const token = await tokenFor(user.login);
+    const legacy = await prisma.radarCard.create({
+      data: {
+        userId: user.id,
+        customerName: 'Историческое название заказчика',
+        mainInfo: 'Информация',
+        event: 'Событие',
+        actionsTaken: 'Действия',
+        incidentDate: new Date(`${iso()}T00:00:00.000Z`),
       },
     });
-    assert.equal(missingLeader.status, 400);
+    const customer = await prisma.customer.create({ data: { name: 'Заказчик из справочника', code: 'RADAR-CUSTOMER' } });
+    await prisma.customer.create({ data: { name: 'Архивный заказчик', isActive: false } });
 
-    const created = await api('POST', '/api/org/work-assignments', {
-      token: ctx.managerToken,
+    const options = await api('GET', '/api/radar-cards/customers', { token });
+    assert.deepEqual(options.body.map((item: { id: number }) => item.id), [customer.id]);
+    const cards = await api('GET', '/api/radar-cards', { token });
+    const legacyCard = cards.body.items.find((item: { id: number }) => item.id === legacy.id);
+    assert.equal(legacyCard.customer, null);
+    assert.equal(legacyCard.customerName, 'Историческое название заказчика');
+
+    const mapped = await api('PATCH', `/api/radar-cards/${legacy.id}`, {
+      token,
       body: {
-        baseId: ctx.baseId,
-        locationType: 'WELL',
-        mineId: mine.body.id,
-        wellId: well.body.id,
-        workTypeId: workType.id,
-        startsAt: iso(1),
-        endsAt: iso(3),
-        responsibleEmployeeIds: [ctx.coordinatorEmployee.id, ctx.employeeCard.id],
+        incidentDate: iso(),
+        customerId: customer.id,
+        customerName: 'Не заменять историческое имя',
+        mainInfo: 'Информация',
+        event: 'Событие',
+        actionsTaken: 'Действия',
+        stoppedWork: false,
       },
     });
-    assert.equal(created.status, 201, JSON.stringify(created.body));
-    assert.equal(created.body.clusterNumber, 'К-12');
-    assert.equal(created.body.responsible.length, 2);
-
-    const ownPlans = await api('GET', '/api/org/work-assignments', { token: await tokenFor(ctx.employee.login) });
-    assert.equal(ownPlans.status, 200);
-    assert.deepEqual(ownPlans.body.map((plan: { id: number }) => plan.id), [created.body.id]);
-    const otherEmployeePlans = await api('GET', '/api/org/work-assignments', { token: ctx.replacementCoordinator ? await tokenFor(ctx.replacementCoordinator.login) : undefined });
-    assert.equal(otherEmployeePlans.status, 200);
-    assert.equal(otherEmployeePlans.body.length, 0);
-  });
-
-  it('разрешает координатору планировать только выезды в закреплённое месторождение', async () => {
-    const ctx = await setup();
-    const mine = await api('POST', `/api/org/bases/${ctx.baseId}/mines`, {
-      token: ctx.managerToken,
-      body: { name: 'Проект координатора', code: 'COORD-1' },
-    });
-    assert.equal(mine.status, 201);
-    const well = await api('POST', `/api/org/mines/${mine.body.id}/wells`, {
-      token: ctx.managerToken,
-      body: { name: 'Скважина куста', clusterNumber: 'К-8' },
-    });
-    assert.equal(well.status, 201);
-    const coordinatorAssignment = await api('POST', `/api/org/mines/${mine.body.id}/coordinator`, {
-      token: ctx.managerToken,
-      body: { coordinatorEmployeeId: ctx.coordinatorEmployee.id, startsAt: iso() },
-    });
-    assert.equal(coordinatorAssignment.status, 201);
-    const otherBase = await prisma.base.create({ data: { name: 'Remote BPO', code: 'REMOTE' } });
-    await prisma.employeeAssignment.update({
-      where: { activeEmployeeId: ctx.replacementEmployee.id },
-      data: { baseId: otherBase.id },
-    });
-    const wrongBase = await api('POST', `/api/org/mines/${mine.body.id}/coordinator`, {
-      token: ctx.adminToken,
-      body: { coordinatorEmployeeId: ctx.replacementEmployee.id, startsAt: iso(1) },
-    });
-    assert.equal(wrongBase.status, 400, JSON.stringify(wrongBase.body));
-    const workType = await prisma.workType.create({
-      data: { code: 'COORD_PLAN_TEST', name: 'Заканчивание', requiresContractPermission: true },
-    });
-    const scheduled = await api('POST', '/api/org/work-assignments', {
-      token: ctx.coordinatorToken,
+    assert.equal(mapped.status, 200, JSON.stringify(mapped.body));
+    assert.equal(mapped.body.customerId, customer.id);
+    assert.equal(mapped.body.customerName, 'Историческое название заказчика');
+    assert.equal(mapped.body.customer.name, customer.name);
+    await prisma.customer.update({ where: { id: customer.id }, data: { isActive: false } });
+    const updatedArchived = await api('PATCH', `/api/radar-cards/${legacy.id}`, {
+      token,
       body: {
-        baseId: ctx.baseId,
-        locationType: 'CLUSTER',
-        mineId: mine.body.id,
-        clusterNumber: 'К-8',
-        workTypeId: workType.id,
-        startsAt: iso(2),
-        endsAt: iso(4),
-        responsibleEmployeeIds: [ctx.coordinatorEmployee.id, ctx.employeeCard.id],
+        incidentDate: iso(),
+        customerId: customer.id,
+        customerName: 'Не заменять историческое имя',
+        mainInfo: 'Обновлённая информация',
+        event: 'Событие',
+        actionsTaken: 'Действия',
+        stoppedWork: false,
       },
     });
-    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body));
-    const visible = await api('GET', '/api/org/work-assignments', { token: ctx.coordinatorToken });
-    assert.equal(visible.status, 200);
-    assert.deepEqual(visible.body.map((plan: { id: number }) => plan.id), [scheduled.body.id]);
+    assert.equal(updatedArchived.status, 200, JSON.stringify(updatedArchived.body));
+    assert.equal(updatedArchived.body.customerName, 'Историческое название заказчика');
   });
 });
 

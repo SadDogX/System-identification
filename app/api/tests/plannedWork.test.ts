@@ -85,7 +85,8 @@ describe('planned work conflict calendar', () => {
     await assignMine(mineA.id, coordACard.id, 'coordinator-a');
     await assignMine(mineB.id, coordBCard.id, 'coordinator-b');
     const now = new Date();
-    const planned = async (input: { mineId: number; wellId: number; pad: string; coordinatorId: number; start: string; end: string; participants: number[]; name: string }) => prisma.plannedWork.create({ data: { baseId: base.id, mineId: input.mineId, wellId: input.wellId, clusterNumber: input.pad, name: input.name, startsAt: new Date(`${input.start}T00:00:00Z`), endsAt: new Date(`${input.end}T00:00:00Z`), coordinatorEmployeeId: input.coordinatorId, supervisorEmployeeId: managerCard.id, createdById: admin.id, updatedAt: now, employees: { create: [...new Set(input.participants)].map((employeeId) => ({ employeeId })) } } });
+    const plannedStatus = await prisma.workStatus.findUniqueOrThrow({ where: { code: 'PLANNED' } });
+    const planned = async (input: { mineId: number; wellId: number; pad: string; coordinatorId: number; start: string; end: string; participants: number[]; name: string }) => prisma.plannedWork.create({ data: { baseId: base.id, mineId: input.mineId, wellId: input.wellId, locationType: 'WELL', statusId: plannedStatus.id, clusterNumber: input.pad, name: input.name, startsAt: new Date(`${input.start}T00:00:00Z`), endsAt: new Date(`${input.end}T00:00:00Z`), coordinatorEmployeeId: input.coordinatorId, supervisorEmployeeId: managerCard.id, createdById: admin.id, updatedAt: now, employees: { create: [...new Set(input.participants)].map((employeeId) => ({ employeeId })) } } });
     const year = new Date().getFullYear();
     const first = `${year}-11-10`; const second = `${year}-11-12`; const third = `${year}-11-14`;
     const own = await planned({ mineId: mineA.id, wellId: wells[0].id, pad: 'K1', coordinatorId: coordACard.id, start: first, end: `${year}-11-15`, participants: [employeeCard.id], name: 'Coordinator A work' });
@@ -120,15 +121,18 @@ describe('planned work conflict calendar', () => {
     const base = await prisma.base.create({ data: { name: 'CRUD Base', code: 'CRUD' } });
     const mine = await prisma.mine.create({ data: { baseId: base.id, name: 'CRUD Field' } });
     const well = await prisma.well.create({ data: { mineId: mine.id, name: 'Well C', clusterNumber: 'C1' } });
+    const workType = await prisma.workType.create({ data: { code: 'PLANNED_CRUD', name: 'Плановая работа', requiresContractPermission: true } });
     const coordinator = await createUser('COORDINATOR'); const supervisor = await createUser('EMPLOYEE'); const worker = await createUser('EMPLOYEE');
     const cards = await Promise.all([coordinator, supervisor, worker].map((user) => prisma.employee.findUniqueOrThrow({ where: { userId: user.id } })));
     const status = await prisma.assignmentStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
     for (const card of cards) await prisma.employeeAssignment.update({ where: { activeEmployeeId: card.id }, data: { statusId: status.id, track: 'TRS', baseId: base.id, startsAt: new Date('2024-01-01T00:00:00Z') } });
     await prisma.mineCoordinatorAssignment.create({ data: { mineId: mine.id, coordinatorId: cards[0].id, currentMineId: mine.id, startsAt: new Date('2024-01-01T00:00:00Z'), operationId: 'crud-coord', createdById: admin.id } });
-    const body = { name: 'Plan create', mineId: mine.id, clusterNumber: 'C1', wellId: well.id, startsAt: iso(), endsAt: iso(2), coordinatorEmployeeId: cards[0].id, supervisorEmployeeId: cards[1].id, employeeIds: [cards[2].id] };
+    const body = { name: 'Plan create', baseId: base.id, locationType: 'WELL', mineId: mine.id, wellId: well.id, workTypeId: workType.id, startsAt: iso(), endsAt: iso(2), coordinatorEmployeeId: cards[0].id, supervisorEmployeeId: cards[1].id, employeeIds: [cards[2].id] };
     const created = await api('POST', '/api/planned-work', { token, body });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     assert.equal(created.body.baseId, base.id);
+    assert.equal(created.body.status.code, 'PLANNED');
+    assert.equal(created.body.workType.id, workType.id);
     const edited = await api('PUT', `/api/planned-work/${created.body.id}`, { token, body: { ...body, name: 'Edited plan' } });
     assert.equal(edited.status, 200, JSON.stringify(edited.body));
     assert.equal(edited.body.name, 'Edited plan');
@@ -137,5 +141,52 @@ describe('planned work conflict calendar', () => {
     const wrongMine = await prisma.mine.create({ data: { baseId: (await prisma.base.create({ data: { name: 'Wrong CRUD Base', code: 'CRUD2' } })).id, name: 'Wrong field' } });
     const wrong = await api('POST', '/api/planned-work', { token, body: { ...body, mineId: wrongMine.id } });
     assert.equal(wrong.status, 400);
+
+    const overlap = await api('POST', '/api/planned-work', { token, body: { ...body, name: 'Overlapping plan' } });
+    assert.equal(overlap.status, 409);
+
+    const skipToCompleted = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token, body: { statusCode: 'COMPLETED' } });
+    assert.equal(skipToCompleted.status, 409);
+    const started = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token, body: { statusCode: 'IN_PROGRESS' } });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+    assert.equal(started.body.status.code, 'IN_PROGRESS');
+    const editStarted = await api('PUT', `/api/planned-work/${created.body.id}`, { token, body: { ...body, name: 'No longer editable' } });
+    assert.equal(editStarted.status, 400);
+    const completed = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token, body: { statusCode: 'COMPLETED' } });
+    assert.equal(completed.status, 200);
+    assert.equal(completed.body.status.code, 'COMPLETED');
+    const reopen = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token, body: { statusCode: 'CANCELLED' } });
+    assert.equal(reopen.status, 409);
+
+    const basePlan = await api('POST', '/api/planned-work', {
+      token,
+      body: { ...body, name: 'Base work', locationType: 'BASE', startsAt: iso(5), endsAt: iso(6), mineId: undefined, wellId: undefined },
+    });
+    assert.equal(basePlan.status, 201, JSON.stringify(basePlan.body));
+    assert.equal(basePlan.body.mineId, null);
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'plannedWork.status.update', entityId: created.body.id } });
+    assert.ok(audit);
+  });
+
+  it('only lets the assigned coordinator or manager change planned work', async () => {
+    const admin = await createUser('ADMIN'); const manager = await createUser('MANAGER'); const coordinator = await createUser('COORDINATOR'); const employee = await createUser('EMPLOYEE');
+    const base = await prisma.base.create({ data: { name: 'Access Base', code: 'ACCESS' } });
+    const mine = await prisma.mine.create({ data: { baseId: base.id, name: 'Access Field' } });
+    const well = await prisma.well.create({ data: { mineId: mine.id, name: 'Access Well', clusterNumber: 'A1' } });
+    const workType = await prisma.workType.create({ data: { code: 'PLANNED_ACCESS', name: 'Access work', requiresContractPermission: true } });
+    const cards = await Promise.all([manager, coordinator, employee].map((user) => prisma.employee.findUniqueOrThrow({ where: { userId: user.id } })));
+    const activeStatus = await prisma.assignmentStatus.findUniqueOrThrow({ where: { code: 'ACTIVE' } });
+    for (const card of cards) await prisma.employeeAssignment.update({ where: { activeEmployeeId: card.id }, data: { statusId: activeStatus.id, track: 'TRS', baseId: base.id, startsAt: new Date('2024-01-01T00:00:00Z') } });
+    await prisma.mineCoordinatorAssignment.create({ data: { mineId: mine.id, coordinatorId: cards[1].id, currentMineId: mine.id, startsAt: new Date('2024-01-01T00:00:00Z'), operationId: 'planned-access-coord', createdById: admin.id } });
+    const created = await api('POST', '/api/planned-work', {
+      token: await tokenFor(manager.login),
+      body: { name: 'Access plan', baseId: base.id, locationType: 'WELL', mineId: mine.id, wellId: well.id, workTypeId: workType.id, startsAt: iso(), endsAt: iso(1), coordinatorEmployeeId: cards[1].id, supervisorEmployeeId: cards[0].id, employeeIds: [cards[2].id] },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const employeeStatus = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token: await tokenFor(employee.login), body: { statusCode: 'IN_PROGRESS' } });
+    assert.equal(employeeStatus.status, 403);
+    const coordinatorStatus = await api('PATCH', `/api/planned-work/${created.body.id}/status`, { token: await tokenFor(coordinator.login), body: { statusCode: 'IN_PROGRESS' } });
+    assert.equal(coordinatorStatus.status, 200, JSON.stringify(coordinatorStatus.body));
+    assert.equal(coordinatorStatus.body.status.code, 'IN_PROGRESS');
   });
 });

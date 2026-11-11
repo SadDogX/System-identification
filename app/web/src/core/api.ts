@@ -47,6 +47,7 @@ async function send<T>(method: string, path: string, body?: unknown, query?: Que
       credentials: 'same-origin',
       headers: {
         ...(body !== undefined && { 'Content-Type': isFile ? body.type || 'application/octet-stream' : 'application/json' }),
+        ...(body instanceof Blob && 'name' in body && typeof body.name === 'string' && { 'X-File-Name': encodeURIComponent(body.name) }),
         ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
       },
       body: body === undefined ? undefined : isFile ? body : JSON.stringify(body),

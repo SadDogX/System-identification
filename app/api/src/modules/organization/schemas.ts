@@ -156,6 +156,8 @@ export const contractSchema = object(
   (value) => (value.endsAt < value.startsAt ? ['endsAt', 'Дата окончания раньше даты начала'] : null),
 );
 export type ContractInput = Infer<typeof contractSchema>;
+export const contractUpdateSchema = contractSchema;
+export type ContractUpdateInput = Infer<typeof contractUpdateSchema>;
 
 export const addendumSchema = object(
   {
@@ -221,6 +223,7 @@ export type BulkWellContractBasisInput = Infer<typeof bulkWellContractBasisSchem
 
 export const workExecutionSchema = object({
   wellId: int({ min: 1 }),
+  customerSiteWorkId: optionalId(),
   workTypeId: int({ min: 1 }),
   performedAt: dateValue,
   statusId: int({ min: 1 }),
@@ -233,40 +236,3 @@ export const workExecutionSchema = object({
   ),
 });
 export type WorkExecutionInput = Infer<typeof workExecutionSchema>;
-
-export const workAssignmentSchema = object(
-  {
-    baseId: int({ min: 1 }),
-    locationType: oneOf(['BASE', 'CLUSTER', 'WELL'] as const),
-    mineId: optionalId(),
-    wellId: optionalId(),
-    clusterNumber: optionalText(50),
-    workTypeId: int({ min: 1 }),
-    startsAt: dateValue,
-    endsAt: dateValue,
-    description: optionalText(10000),
-    responsibleEmployeeIds: matches(
-      (v): v is number[] => Array.isArray(v) && v.length > 0 && v.every((item) => Number.isInteger(item) && item > 0),
-      'Выберите руководителя и сотрудников',
-    ),
-  },
-  (value) => {
-    if (value.endsAt < value.startsAt) return ['endsAt', 'Дата окончания раньше даты начала'];
-    if (value.locationType === 'BASE' && (value.mineId || value.wellId || value.clusterNumber)) {
-      return ['locationType', 'Для работы на базе не выбираются месторождение, куст или скважина'];
-    }
-    if (value.locationType === 'CLUSTER' && (!value.mineId || !value.clusterNumber || value.wellId)) {
-      return ['clusterNumber', 'Для работы на кусту выберите месторождение и укажите номер куста'];
-    }
-    if (value.locationType === 'WELL' && (!value.mineId || !value.wellId || value.clusterNumber)) {
-      return ['wellId', 'Для работы на скважине выберите месторождение и скважину'];
-    }
-    return null;
-  },
-);
-export type WorkAssignmentInput = Infer<typeof workAssignmentSchema>;
-
-export const workAssignmentStatusSchema = object({
-  statusCode: oneOf(['IN_PROGRESS', 'COMPLETED', 'CANCELLED'] as const),
-});
-export type WorkAssignmentStatusInput = Infer<typeof workAssignmentStatusSchema>;

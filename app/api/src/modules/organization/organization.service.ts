@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { Prisma, type PrismaClient, type User } from '@prisma/client';
-import { todayInTimezone, SYSTEM_ROLE_DIRECTORY, SYSTEM_ROLE_CODES } from '@app/shared';
+import { PHOTO_MAX_BYTES, PHOTO_TYPES, todayInTimezone, SYSTEM_ROLE_DIRECTORY, SYSTEM_ROLE_CODES } from '@app/shared';
 import type { Tx } from '../../core/db.ts';
 import { prisma } from '../../core/db.ts';
+import { config } from '../../core/config.ts';
 import { badRequest, conflict, forbidden, notFound } from '../../core/errors.ts';
 import { audit, diffOf } from '../../core/audit.ts';
 import { syncPositionSystemRole } from './positionRoles.ts';
@@ -14,6 +17,7 @@ import type {
   BaseUpdateInput,
   BulkWellContractBasisInput,
   ContractInput,
+  ContractUpdateInput,
   ContractPermissionInput,
   CustomerInput,
   CustomerUpdateInput,
@@ -26,8 +30,6 @@ import type {
   WellContractBasisInput,
   WorkAuthorizationInput,
   WorkExecutionInput,
-  WorkAssignmentInput,
-  WorkAssignmentStatusInput,
   WorkTypeInput,
   WorkTypeUpdateInput,
 } from './schemas.ts';
@@ -366,6 +368,27 @@ export async function listWells(actor: User, mineId: number) {
   });
 }
 
+export async function listCustomerSiteWorksForWell(actor: User, wellId: number) {
+  const well = await prisma.well.findUnique({
+    where: { id: wellId },
+    include: { mine: { select: { baseId: true, isActive: true, base: { select: { isActive: true } } } } },
+  });
+  if (!well?.isActive || !well.mine.isActive || !well.mine.base.isActive) throw notFound('Скважина не найдена или архивирована');
+  await assertBaseAccess(prisma, actor, well.mine.baseId);
+  const works = await prisma.customerSiteWork.findMany({
+    where: { wellId },
+    include: { customer: { select: { id: true, name: true } } },
+    orderBy: [{ startsAt: 'desc' }, { id: 'desc' }],
+  });
+  return works.map((work) => ({
+    id: work.id,
+    name: work.name,
+    customer: work.customer,
+    startsAt: work.startsAt.toISOString().slice(0, 10),
+    expectedEndAt: work.expectedEndAt.toISOString().slice(0, 10),
+  }));
+}
+
 export async function listContracts(actor: User, baseId: number) {
   await assertBaseAccess(prisma, actor, baseId);
   return prisma.contract.findMany({
@@ -481,334 +504,6 @@ export async function createWell(actor: User, mineId: number, input: WellInput) 
     await audit(tx, { actorId: actor.id, action: 'well.create', entityType: 'Well', entityId: well.id });
     return well;
   });
-}
-
-export async function listWorkAssignments(actor: User) {
-  const roles = await roleCodes(prisma, actor.id);
-  let where: Prisma.WorkAssignmentWhereInput;
-  if (isAdministrator(actor, roles)) {
-    where = {};
-  } else {
-    const employee = await prisma.employee.findUnique({ where: { userId: actor.id } });
-    if (!employee) throw forbidden();
-    if (roles.includes('MANAGER')) {
-      const baseId = await actorBase(prisma, actor);
-      if (!baseId) throw forbidden();
-      where = { baseId };
-    } else if (roles.includes('COORDINATOR')) {
-      const assignments = await prisma.mineCoordinatorAssignment.findMany({
-        where: { coordinatorId: employee.id, currentMineId: { not: null } },
-        select: { mineId: true, mine: { select: { baseId: true } } },
-      });
-      const mineIds = assignments.map(({ mineId }) => mineId);
-      const baseIds = [...new Set(assignments.map(({ mine }) => mine.baseId))];
-      where = {
-        OR: [
-          ...(mineIds.length ? [{ mineId: { in: mineIds } }] : []),
-          ...(baseIds.length ? [{ baseId: { in: baseIds }, locationType: 'BASE' as const }] : []),
-        ],
-      };
-    } else {
-      where = { responsible: { some: { employeeId: employee.id } } };
-    }
-  }
-  return prisma.workAssignment.findMany({
-    where,
-    include: {
-      base: { select: { id: true, name: true } },
-      mine: { select: { id: true, name: true } },
-      well: { select: { id: true, name: true, clusterNumber: true } },
-      workType: { select: { id: true, name: true } },
-      status: { select: { id: true, code: true, name: true } },
-      responsible: {
-        include: { employee: { include: { user: { select: { id: true, fullName: true } } } } },
-      },
-    },
-    orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
-  });
-}
-
-const WORK_ASSIGNMENT_INCLUDE = {
-  base: { select: { id: true, name: true } },
-  mine: { select: { id: true, name: true } },
-  well: { select: { id: true, name: true, clusterNumber: true } },
-  workType: { select: { id: true, name: true } },
-  status: { select: { id: true, code: true, name: true } },
-  responsible: {
-    include: { employee: { include: { user: { select: { id: true, fullName: true } } } } },
-  },
-} satisfies Prisma.WorkAssignmentInclude;
-
-async function prepareWorkAssignment(tx: Tx, actor: User, input: WorkAssignmentInput) {
-  const roles = await roleCodes(tx, actor.id);
-  const isAdmin = isAdministrator(actor, roles);
-  const employee = isAdmin ? null : await tx.employee.findUnique({ where: { userId: actor.id } });
-  if (!isAdmin && (!employee || (!roles.includes('MANAGER') && !roles.includes('COORDINATOR')))) {
-    throw forbidden();
-  }
-
-  const base = await tx.base.findUnique({ where: { id: input.baseId } });
-  if (!base?.isActive) throw notFound('База не найдена или архивирована');
-  if (!isAdmin && roles.includes('MANAGER') && (await actorBase(tx, actor)) !== input.baseId) {
-    throw forbidden();
-  }
-
-  let mineId: number | null = null;
-  let wellId: number | null = null;
-  let clusterNumber: string | null = input.clusterNumber ?? null;
-  if (input.locationType !== 'BASE') {
-    const mine = input.mineId ? await tx.mine.findUnique({ where: { id: input.mineId } }) : null;
-    if (!mine?.isActive || mine.baseId !== input.baseId) throw badRequest('Месторождение не относится к выбранной базе');
-    mineId = mine.id;
-    if (!isAdmin && roles.includes('COORDINATOR') && !roles.includes('MANAGER')) {
-      const coordinatorAssignment = await tx.mineCoordinatorAssignment.findFirst({
-        where: { mineId: mine.id, coordinatorId: employee!.id, currentMineId: mine.id },
-      });
-      if (!coordinatorAssignment) throw forbidden();
-    }
-  } else if (input.mineId || input.wellId || input.clusterNumber) {
-    throw badRequest('Для работы на базе не выбираются месторождение, куст или скважина');
-  } else if (!isAdmin && roles.includes('COORDINATOR') && !roles.includes('MANAGER')) {
-    const current = await currentAssignment(tx, employee!.id);
-    const coordinatedMine = await tx.mineCoordinatorAssignment.findFirst({
-      where: { coordinatorId: employee!.id, currentMineId: { not: null }, mine: { baseId: input.baseId } },
-    });
-    if (current?.baseId !== input.baseId && !coordinatedMine) throw forbidden();
-  }
-
-  if (input.locationType === 'WELL') {
-    const well = input.wellId ? await tx.well.findUnique({ where: { id: input.wellId } }) : null;
-    if (!well?.isActive || well.mineId !== mineId) throw badRequest('Скважина не относится к выбранному месторождению');
-    wellId = well.id;
-    clusterNumber = well.clusterNumber;
-  } else if (input.locationType === 'CLUSTER') {
-    const clusterMineId = input.mineId;
-    if (!clusterMineId) throw badRequest('Выберите месторождение для работы на кусту');
-    const clusterExists = await tx.well.findFirst({
-      where: { mineId: clusterMineId, clusterNumber, isActive: true },
-      select: { id: true },
-    });
-    if (!clusterExists) throw badRequest('Выберите куст из справочника скважин месторождения');
-  }
-
-  const workType = await tx.workType.findUnique({ where: { id: input.workTypeId } });
-  if (!workType?.isActive) throw badRequest('Вид работ не найден или деактивирован');
-  const status = await tx.workStatus.findUnique({ where: { code: 'PLANNED' } });
-  if (!status?.isActive) throw conflict('Не настроен статус запланированной работы');
-
-  const responsibleIds = [...new Set(input.responsibleEmployeeIds)];
-  const responsible = await tx.employee.findMany({
-    where: {
-      id: { in: responsibleIds },
-      user: { isActive: true, isDeleted: false },
-      assignments: { some: { activeEmployeeId: { not: null }, baseId: input.baseId } },
-    },
-    include: {
-      user: { select: { systemRoles: { where: { revokedAt: null, systemRole: { isActive: true } }, include: { systemRole: { select: { code: true } } } } } },
-    },
-  });
-  if (responsible.length !== responsibleIds.length) {
-    throw badRequest('Все выбранные сотрудники должны иметь действующее назначение на выбранной базе');
-  }
-  if (!responsible.some((item) => item.user.systemRoles.some((grant) => ['MANAGER', 'COORDINATOR'].includes(grant.systemRole.code)))) {
-    throw badRequest('Выберите в команду руководителя или координатора');
-  }
-
-  return {
-    baseId: input.baseId,
-    mineId,
-    wellId,
-    locationType: input.locationType,
-    clusterNumber,
-    workTypeId: workType.id,
-    statusId: status.id,
-    startsAt: dateOnly(input.startsAt),
-    endsAt: dateOnly(input.endsAt),
-    description: input.description ?? null,
-    responsibleIds,
-  };
-}
-
-async function assertNoWorkAssignmentOverlaps(
-  tx: Tx,
-  employeeIds: number[],
-  startsAt: Date,
-  endsAt: Date,
-  excludeAssignmentId?: number,
-) {
-  const overlap = await tx.workAssignmentResponsible.findFirst({
-    where: {
-      employeeId: { in: employeeIds },
-      workAssignment: {
-        ...(excludeAssignmentId !== undefined && { id: { not: excludeAssignmentId } }),
-        startsAt: { lte: endsAt },
-        endsAt: { gte: startsAt },
-        status: { code: { not: 'CANCELLED' } },
-      },
-    },
-    include: {
-      employee: { include: { user: { select: { fullName: true } } } },
-      workAssignment: { select: { startsAt: true, endsAt: true } },
-    },
-  });
-  if (overlap) {
-    const starts = overlap.workAssignment.startsAt.toISOString().slice(0, 10);
-    const ends = overlap.workAssignment.endsAt.toISOString().slice(0, 10);
-    throw conflict(`${overlap.employee.user.fullName} уже назначен на выезд с ${starts} по ${ends}`);
-  }
-}
-
-async function assertCanManageWorkAssignment(
-  tx: Tx,
-  actor: User,
-  roles: string[],
-  assignment: { baseId: number; mineId: number | null },
-) {
-  if (isAdministrator(actor, roles)) return;
-  const employee = await tx.employee.findUnique({ where: { userId: actor.id } });
-  if (!employee) throw forbidden();
-  if (roles.includes('MANAGER')) {
-    if ((await actorBase(tx, actor)) !== assignment.baseId) throw forbidden();
-    return;
-  }
-  if (roles.includes('COORDINATOR')) {
-    if (assignment.mineId !== null) {
-      const assignedMine = await tx.mineCoordinatorAssignment.findFirst({
-        where: { mineId: assignment.mineId, coordinatorId: employee.id, currentMineId: assignment.mineId },
-      });
-      if (assignedMine) return;
-    } else {
-      const assignedBase = await tx.mineCoordinatorAssignment.findFirst({
-        where: { coordinatorId: employee.id, currentMineId: { not: null }, mine: { baseId: assignment.baseId } },
-      });
-      if (assignedBase) return;
-    }
-  }
-  throw forbidden();
-}
-
-export async function createWorkAssignment(actor: User, input: WorkAssignmentInput) {
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const data = await prepareWorkAssignment(tx, actor, input);
-      const { responsibleIds, ...assignmentData } = data;
-      await assertNoWorkAssignmentOverlaps(tx, responsibleIds, data.startsAt, data.endsAt);
-      const assignment = await tx.workAssignment.create({
-        data: {
-          ...assignmentData,
-          createdById: actor.id,
-          responsible: { create: responsibleIds.map((employeeId) => ({ employeeId })) },
-        },
-        include: WORK_ASSIGNMENT_INCLUDE,
-      });
-      await audit(tx, {
-        actorId: actor.id,
-        action: 'organization.workAssignment.create',
-        entityType: 'WorkAssignment',
-        entityId: assignment.id,
-      });
-      return assignment;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
-      throw conflict('Данные организации изменились параллельно; повторите создание выезда');
-    }
-    throw error;
-  }
-}
-
-export async function updateWorkAssignment(actor: User, workAssignmentId: number, input: WorkAssignmentInput) {
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const existing = await tx.workAssignment.findUnique({
-        where: { id: workAssignmentId },
-        include: { status: { select: { code: true } }, responsible: { select: { employeeId: true } } },
-      });
-      if (!existing) throw notFound('План выезда не найден');
-      if (existing.status.code !== 'PLANNED') throw conflict('Изменять можно только запланированный выезд');
-      const roles = await roleCodes(tx, actor.id);
-      await assertCanManageWorkAssignment(tx, actor, roles, existing);
-
-      const data = await prepareWorkAssignment(tx, actor, input);
-      const { responsibleIds, ...assignmentData } = data;
-      await assertNoWorkAssignmentOverlaps(tx, responsibleIds, data.startsAt, data.endsAt, workAssignmentId);
-      const updated = await tx.workAssignment.update({
-        where: { id: workAssignmentId },
-        data: {
-          ...assignmentData,
-          responsible: {
-            deleteMany: {},
-            create: responsibleIds.map((employeeId) => ({ employeeId })),
-          },
-        },
-        include: WORK_ASSIGNMENT_INCLUDE,
-      });
-      const previousResponsibleIds = existing.responsible.map(({ employeeId }) => employeeId).sort((a, b) => a - b);
-      const nextResponsibleIds = [...responsibleIds].sort((a, b) => a - b);
-      const diff = diffOf(
-        existing,
-        updated,
-        ['baseId', 'mineId', 'wellId', 'locationType', 'clusterNumber', 'workTypeId', 'startsAt', 'endsAt', 'description'],
-      );
-      if (JSON.stringify(previousResponsibleIds) !== JSON.stringify(nextResponsibleIds)) {
-        diff.responsibleEmployeeIds = { from: previousResponsibleIds, to: nextResponsibleIds };
-      }
-      await audit(tx, {
-        actorId: actor.id,
-        action: 'organization.workAssignment.update',
-        entityType: 'WorkAssignment',
-        entityId: updated.id,
-        diff,
-      });
-      return updated;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
-      throw conflict('Данные организации изменились параллельно; повторите изменение выезда');
-    }
-    throw error;
-  }
-}
-
-export async function updateWorkAssignmentStatus(actor: User, workAssignmentId: number, input: WorkAssignmentStatusInput) {
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const existing = await tx.workAssignment.findUnique({
-        where: { id: workAssignmentId },
-        include: { status: { select: { code: true } } },
-      });
-      if (!existing) throw notFound('План выезда не найден');
-      const roles = await roleCodes(tx, actor.id);
-      await assertCanManageWorkAssignment(tx, actor, roles, existing);
-      const allowedTransitions: Record<string, string[]> = {
-        PLANNED: ['IN_PROGRESS', 'CANCELLED'],
-        IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
-      };
-      if (!allowedTransitions[existing.status.code]?.includes(input.statusCode)) {
-        throw conflict(`Нельзя изменить статус выезда с ${existing.status.code} на ${input.statusCode}`);
-      }
-      const status = await tx.workStatus.findUnique({ where: { code: input.statusCode } });
-      if (!status?.isActive) throw conflict(`Не настроен активный статус ${input.statusCode}`);
-      const updated = await tx.workAssignment.update({
-        where: { id: workAssignmentId },
-        data: { statusId: status.id },
-        include: WORK_ASSIGNMENT_INCLUDE,
-      });
-      await audit(tx, {
-        actorId: actor.id,
-        action: 'organization.workAssignment.status.update',
-        entityType: 'WorkAssignment',
-        entityId: updated.id,
-        diff: { status: { from: existing.status.code, to: status.code } },
-      });
-      return updated;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
-      throw conflict('Данные организации изменились параллельно; повторите изменение статуса выезда');
-    }
-    throw error;
-  }
 }
 
 export async function updateEmployeeProfile(actor: User, employeeId: number, input: EmployeeProfileInput) {
@@ -1505,6 +1200,188 @@ export async function createContract(actor: User, baseId: number, input: Contrac
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
+export async function updateContract(actor: User, contractId: number, input: ContractUpdateInput) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.contract.findUnique({ where: { id: contractId }, include: { customer: true, status: true } });
+    if (!existing) throw notFound('Договор не найден');
+    await assertBaseAccess(tx, actor, existing.baseId);
+    const [customer, status] = await Promise.all([
+      tx.customer.findUnique({ where: { id: input.customerId } }),
+      tx.contractStatus.findUnique({ where: { id: input.statusId } }),
+    ]);
+    if (!customer || (!customer.isActive && customer.id !== existing.customerId)) throw badRequest('Заказчик не найден или деактивирован');
+    if (!status || (!status.isActive && status.id !== existing.statusId)) throw badRequest('Статус договора не найден или деактивирован');
+
+    const startsAt = dateOnly(input.startsAt);
+    const endsAt = dateOnly(input.endsAt);
+    const bases = await tx.wellContractBasis.findMany({
+      where: { contractId },
+      select: { startsAt: true, endsAt: true },
+    });
+    if (bases.some((basis) => basis.startsAt < startsAt || (basis.endsAt !== null && basis.endsAt > endsAt))) {
+      throw badRequest('Период договора не может исключать существующие договорные основания');
+    }
+    const outOfRangeAddendum = await tx.contractAddendum.findFirst({
+      where: {
+        contractId,
+        OR: [{ startsAt: { lt: startsAt } }, { endsAt: { gt: endsAt } }],
+      },
+      select: { id: true },
+    });
+    if (outOfRangeAddendum) throw badRequest('Период договора должен включать периоды существующих допсоглашений');
+    const outOfRangeAddendumBasis = await tx.wellContractBasis.findFirst({
+      where: {
+        addendum: { contractId },
+        OR: [{ startsAt: { lt: startsAt } }, { endsAt: { gt: endsAt } }],
+      },
+      select: { id: true },
+    });
+    if (outOfRangeAddendumBasis) throw badRequest('Период договора не может исключать основания по допсоглашениям');
+    const outOfRangeExecution = await tx.workExecution.findFirst({
+      where: {
+        contractId,
+        OR: [{ performedAt: { lt: startsAt } }, { performedAt: { gt: endsAt } }],
+      },
+      select: { id: true },
+    });
+    if (outOfRangeExecution) throw badRequest('Период договора не может исключать зарегистрированные работы');
+
+    const updated = await tx.contract.update({
+      where: { id: contractId },
+      data: {
+        customerId: customer.id,
+        statusId: status.id,
+        number: input.number,
+        startsAt,
+        endsAt,
+      },
+      include: { customer: true, base: true, status: true },
+    });
+    const diff = diffOf(existing, updated, ['number', 'startsAt', 'endsAt']);
+    if (existing.customerId !== updated.customerId) {
+      diff.customer = {
+        from: { id: existing.customerId, name: existing.customer.name },
+        to: { id: updated.customerId, name: updated.customer.name },
+      };
+    }
+    if (existing.statusId !== updated.statusId) {
+      diff.status = {
+        from: { id: existing.statusId, code: existing.status.code, name: existing.status.name },
+        to: { id: updated.statusId, code: updated.status.code, name: updated.status.name },
+      };
+    }
+    await audit(tx, {
+      actorId: actor.id,
+      action: 'organization.contract.update',
+      entityType: 'Contract',
+      entityId: contractId,
+      diff,
+    });
+    return updated;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+type ContractDocumentMime = (typeof PHOTO_TYPES)[number];
+const CONTRACT_DOCUMENT_EXTENSIONS: Record<ContractDocumentMime, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+};
+const contractDocumentPath = (file: string) => fileURLToPath(new URL(file, config.uploadsDir));
+
+function detectContractDocumentType(buffer: Buffer): ContractDocumentMime | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (buffer.length >= 5 && buffer.toString('ascii', 0, 5) === '%PDF-') return 'application/pdf';
+  return null;
+}
+
+function contractDocumentName(name: string) {
+  const cleaned = name.replace(/[\u0000-\u001f\u007f]/g, '').split(/[\\/]/).pop()?.trim() ?? '';
+  const normalized = Array.from(cleaned).slice(0, 255).join('');
+  if (!normalized) throw badRequest('Укажите имя файла');
+  return normalized;
+}
+
+export async function listContractDocuments(actor: User, contractId: number) {
+  const contract = await prisma.contract.findUnique({ where: { id: contractId }, select: { baseId: true } });
+  if (!contract) throw notFound('Договор не найден');
+  await assertBaseAccess(prisma, actor, contract.baseId);
+  return prisma.contractDocument.findMany({
+    where: { contractId },
+    select: { id: true, name: true, mime: true, createdAt: true, createdBy: { select: { id: true, fullName: true } } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+}
+
+export async function uploadContractDocument(actor: User, contractId: number, originalName: string, body: unknown) {
+  if (!Buffer.isBuffer(body) || body.length === 0) throw badRequest('Файл не передан');
+  if (body.length > PHOTO_MAX_BYTES) throw badRequest('Размер файла не должен превышать 5 МБ');
+  const mime = detectContractDocumentType(body);
+  if (!mime) throw badRequest('Поддерживаются файлы JPG, PNG, WebP или PDF');
+  const name = contractDocumentName(originalName);
+  const storedFile = `${contractId}-${randomUUID()}.${CONTRACT_DOCUMENT_EXTENSIONS[mime]}`;
+  let fileCreated = false;
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const contract = await tx.contract.findUnique({ where: { id: contractId }, select: { baseId: true } });
+      if (!contract) throw notFound('Договор не найден');
+      await assertBaseAccess(tx, actor, contract.baseId);
+      await mkdir(fileURLToPath(config.uploadsDir), { recursive: true });
+      await writeFile(contractDocumentPath(storedFile), body);
+      fileCreated = true;
+      const document = await tx.contractDocument.create({
+        data: { contractId, name, storedFile, mime, createdById: actor.id },
+        select: { id: true, name: true, mime: true, createdAt: true },
+      });
+      await audit(tx, {
+        actorId: actor.id,
+        action: 'organization.contract.document.upload',
+        entityType: 'ContractDocument',
+        entityId: document.id,
+        diff: { name: { from: null, to: name }, mime: { from: null, to: mime } },
+      });
+      return document;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (fileCreated) await rm(contractDocumentPath(storedFile), { force: true });
+    throw error;
+  }
+}
+
+export async function getContractDocument(actor: User, contractId: number, documentId: number) {
+  const document = await prisma.contractDocument.findFirst({
+    where: { id: documentId, contractId },
+    include: { contract: { select: { baseId: true } } },
+  });
+  if (!document) throw notFound('Документ договора не найден');
+  await assertBaseAccess(prisma, actor, document.contract.baseId);
+  return { path: contractDocumentPath(document.storedFile), mime: document.mime, name: document.name };
+}
+
+export async function deleteContractDocument(actor: User, contractId: number, documentId: number) {
+  const document = await prisma.$transaction(async (tx) => {
+    const existing = await tx.contractDocument.findFirst({
+      where: { id: documentId, contractId },
+      include: { contract: { select: { baseId: true } } },
+    });
+    if (!existing) throw notFound('Документ договора не найден');
+    await assertBaseAccess(tx, actor, existing.contract.baseId);
+    await tx.contractDocument.delete({ where: { id: documentId } });
+    await audit(tx, {
+      actorId: actor.id,
+      action: 'organization.contract.document.delete',
+      entityType: 'ContractDocument',
+      entityId: documentId,
+      diff: { name: { from: existing.name, to: null }, mime: { from: existing.mime, to: null } },
+    });
+    return existing;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  await rm(contractDocumentPath(document.storedFile), { force: true });
+}
+
 export async function createAddendum(actor: User, contractId: number, input: AddendumInput) {
   return prisma.$transaction(async (tx) => {
     const contract = await tx.contract.findUnique({ where: { id: contractId } });
@@ -1683,6 +1560,15 @@ export async function recordWork(actor: User, input: WorkExecutionInput) {
     return await prisma.$transaction(async (tx) => {
       const authorization = await checkWorkAuthorization(tx, actor, input);
       if (!authorization.authorized) throw badRequest(authorization.reason);
+      if (input.customerSiteWorkId != null) {
+        const [siteWork, contract] = await Promise.all([
+          tx.customerSiteWork.findUnique({ where: { id: input.customerSiteWorkId }, select: { wellId: true, customerId: true } }),
+          tx.contract.findUnique({ where: { id: authorization.contractId }, select: { customerId: true } }),
+        ]);
+        if (!siteWork || siteWork.wellId !== input.wellId || siteWork.customerId !== contract?.customerId) {
+          throw badRequest('Работа на объекте должна относиться к той же скважине и заказчику');
+        }
+      }
       const status = await tx.workStatus.findUnique({ where: { id: input.statusId } });
       if (!status?.isActive) throw badRequest('Статус выполнения работ не найден или деактивирован');
       const responsibleIds = [...new Set(input.responsibleEmployeeIds ?? [])];
@@ -1693,6 +1579,7 @@ export async function recordWork(actor: User, input: WorkExecutionInput) {
       const execution = await tx.workExecution.create({
         data: {
           wellId: input.wellId,
+          customerSiteWorkId: input.customerSiteWorkId ?? null,
           workTypeId: input.workTypeId,
           contractId: authorization.contractId,
           addendumId: authorization.addendumId,

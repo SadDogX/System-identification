@@ -8,9 +8,10 @@ import { ActionError } from '../../widgets/feedback/ActionError';
 interface Base { id: number; name: string; code: string | null }
 interface Mine { id: number; name: string; baseId: number; base: Base }
 interface Well { id: number; name: string; code: string | null; contractBases?: { contract: { number: string } | null; addendum: { number: string } | null }[] }
-interface Customer { id: number; name: string; code: string | null }
+interface Customer { id: number; name: string; code: string | null; isActive: boolean }
+interface CustomerSiteWork { id: number; name: string; customer: { id: number; name: string }; startsAt: string; expectedEndAt: string }
 interface WorkType { id: number; name: string; code: string; requiresContractPermission: boolean }
-interface Status { id: number; code: string; name: string; allowsWork?: boolean }
+interface Status { id: number; code: string; name: string; isActive: boolean; allowsWork?: boolean }
 interface Contract {
   id: number;
   number: string;
@@ -20,6 +21,7 @@ interface Contract {
   status: Status;
   addenda: { id: number; number: string; startsAt: string; endsAt: string; status: Status }[];
 }
+interface ContractDocument { id: number; name: string; mime: string; createdAt: string }
 interface Employee {
   id: number;
   user: { systemRoles: { systemRole: { code: string } }[] };
@@ -43,13 +45,12 @@ export function WorkExecutionPage() {
   const [contractId, setContractId] = useState('');
   const [addendumId, setAddendumId] = useState('');
   const [workTypeId, setWorkTypeId] = useState('');
+  const [customerSiteWorkId, setCustomerSiteWorkId] = useState('');
   const [workStatusId, setWorkStatusId] = useState('');
   const [performedAt, setPerformedAt] = useState(today());
   const [contractStart, setContractStart] = useState(today());
   const [contractEnd, setContractEnd] = useState('');
   const [workPermission, setWorkPermission] = useState(true);
-  const [customerName, setCustomerName] = useState('');
-  const [customerCode, setCustomerCode] = useState('');
   const [workTypeName, setWorkTypeName] = useState('');
   const [workTypeCode, setWorkTypeCode] = useState('');
   const [contractNumber, setContractNumber] = useState('');
@@ -74,13 +75,21 @@ export function WorkExecutionPage() {
     canManageWork && mineId ? `org:work:wells:${mineId}` : null,
     () => api.get<Well[]>(`/org/mines/${mineId}/wells`),
   );
+  const customerSiteWorksQuery = useQuery(
+    canManageWork && wellId ? `org:work:customer-site-works:${wellId}` : null,
+    () => api.get<CustomerSiteWork[]>(`/org/wells/${wellId}/customer-site-works`),
+  );
   const bases = basesQuery.data ?? [];
   const mines = minesQuery.data ?? [];
   const customers = customersQuery.data ?? [];
   const workTypes = workTypesQuery.data ?? [];
   const contracts = contractsQuery.data ?? [];
   const wells = wellsQuery.data ?? [];
+  const customerSiteWorks = customerSiteWorksQuery.data ?? [];
   const selectedContract = contracts.find((contract) => String(contract.id) === contractId);
+  const selectableCustomerSiteWorks = selectedContract
+    ? customerSiteWorks.filter((work) => work.customer.id === selectedContract.customer.id)
+    : customerSiteWorks;
   const selectedWorkType = workTypes.find((type) => String(type.id) === workTypeId);
   const availableAddenda = selectedContract?.addenda ?? [];
   const activeContractStatus = (contractStatusesQuery.data ?? []).find((status) => status.code === 'ACTIVE');
@@ -88,13 +97,6 @@ export function WorkExecutionPage() {
   const defaultWorkStatus = (workStatusesQuery.data ?? []).find((status) => status.code === 'COMPLETED');
   const sameBaseMines = mines.filter((mine) => !baseId || mine.baseId === Number(baseId));
 
-  const createCustomer = useAction(() => api.post('/org/customers', { name: customerName, code: customerCode || null }), {
-    onSuccess: () => {
-      setCustomerName('');
-      setCustomerCode('');
-      invalidate('org:work:');
-    },
-  });
   const createWorkType = useAction(() => api.post('/admin/org/work-types', {
     code: workTypeCode.toUpperCase(),
     name: workTypeName,
@@ -152,6 +154,7 @@ export function WorkExecutionPage() {
   });
   const recordWork = useAction(() => api.post('/org/work', {
     wellId: Number(wellId),
+    ...(customerSiteWorkId ? { customerSiteWorkId: Number(customerSiteWorkId) } : {}),
     workTypeId: Number(workTypeId),
     performedAt,
     statusId: Number(workStatusId || defaultWorkStatus?.id),
@@ -174,6 +177,7 @@ export function WorkExecutionPage() {
     selfQuery.error,
     contractsQuery.error,
     wellsQuery.error,
+    customerSiteWorksQuery.error,
   ].find(Boolean);
 
   return <>
@@ -184,15 +188,6 @@ export function WorkExecutionPage() {
 
     {canManageWork && isAdmin && <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
       <h2 className="section-title">Справочники</h2>
-      <form className="row wrap" style={{ alignItems: 'flex-end' }} onSubmit={(event) => {
-        event.preventDefault();
-        createCustomer.run();
-      }}>
-        <TextField label="Новый заказчик" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
-        <TextField label="Код заказчика" value={customerCode} onChange={(event) => setCustomerCode(event.target.value)} />
-        <button className="btn" disabled={!customerName.trim() || createCustomer.pending}>Добавить заказчика</button>
-      </form>
-      <ActionError error={createCustomer.error} />
       <form className="row wrap" style={{ alignItems: 'flex-end', marginTop: 12 }} onSubmit={(event) => {
         event.preventDefault();
         createWorkType.run();
@@ -218,6 +213,8 @@ export function WorkExecutionPage() {
         <SelectField label="База" value={baseId} onChange={(event) => {
           setBaseId(event.target.value);
           setMineId('');
+          setWellId('');
+          setCustomerSiteWorkId('');
           setContractId('');
         }}>
           <option value="">Выберите базу</option>
@@ -238,6 +235,7 @@ export function WorkExecutionPage() {
           <SelectField label="Договор" value={contractId} onChange={(event) => {
             setContractId(event.target.value);
             setAddendumId('');
+            setCustomerSiteWorkId('');
           }}>
             <option value="">Выберите договор</option>
             {contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.number} · {contract.customer.name} ({contract.status.name})</option>)}
@@ -247,14 +245,19 @@ export function WorkExecutionPage() {
             {availableAddenda.map((addendum) => <option key={addendum.id} value={addendum.id}>{addendum.number} · {addendum.status.name}</option>)}
           </SelectField>
         </div>
-        {selectedContract && <div className="row wrap" style={{ alignItems: 'flex-end', marginTop: 12 }}>
-          <span className="muted">Договор действует {selectedContract.startsAt.slice(0, 10)}—{selectedContract.endsAt.slice(0, 10)}</span>
+        {selectedContract && <>
+          <ContractEditor
+            contract={selectedContract}
+            customers={customers}
+            statuses={contractStatusesQuery.data ?? []}
+            onSaved={() => { invalidate('org:work:contracts:'); setMessage('Договор сохранён.'); }}
+          />
           {activeAddendumStatus && <AddendumCreator
             contractId={selectedContract.id}
             statusId={activeAddendumStatus.id}
             onCreated={() => invalidate('org:work:contracts:')}
           />}
-        </div>}
+        </>}
       </>}
     </section>
 
@@ -265,11 +268,15 @@ export function WorkExecutionPage() {
         <SelectField label="Месторождение" value={mineId} onChange={(event) => {
           setMineId(event.target.value);
           setWellId('');
+          setCustomerSiteWorkId('');
         }}>
           <option value="">Выберите месторождение</option>
           {sameBaseMines.map((mine) => <option key={mine.id} value={mine.id}>{mine.base.name} · {mine.name}</option>)}
         </SelectField>
-        <SelectField label="Скважина" value={wellId} onChange={(event) => setWellId(event.target.value)}>
+        <SelectField label="Скважина" value={wellId} onChange={(event) => {
+          setWellId(event.target.value);
+          setCustomerSiteWorkId('');
+        }}>
           <option value="">Выберите скважину</option>
           {wells.map((well) => <option key={well.id} value={well.id}>{well.name}{well.code ? ` · ${well.code}` : ''}</option>)}
         </SelectField>
@@ -319,9 +326,16 @@ export function WorkExecutionPage() {
         setMessage('');
         recordWork.run();
       }}>
-        <SelectField label="Скважина" value={wellId} onChange={(event) => setWellId(event.target.value)}>
+        <SelectField label="Скважина" value={wellId} onChange={(event) => {
+          setWellId(event.target.value);
+          setCustomerSiteWorkId('');
+        }}>
           <option value="">Выберите скважину</option>
           {wells.map((well) => <option key={well.id} value={well.id}>{well.name}</option>)}
+        </SelectField>
+        <SelectField label="Работа на объекте заказчика" value={customerSiteWorkId} onChange={(event) => setCustomerSiteWorkId(event.target.value)}>
+          <option value="">Не связывать с работой на объекте</option>
+          {selectableCustomerSiteWorks.map((work) => <option key={work.id} value={work.id}>{work.name} · {work.customer.name} ({work.startsAt} – {work.expectedEndAt})</option>)}
         </SelectField>
         <SelectField label="Статус выполнения" value={workStatusId || String(defaultWorkStatus?.id ?? '')} onChange={(event) => setWorkStatusId(event.target.value)}>
           {(workStatusesQuery.data ?? []).map((status) => <option key={status.id} value={status.id}>{status.name}</option>)}
@@ -334,6 +348,87 @@ export function WorkExecutionPage() {
     </section>
     </>}
   </>;
+}
+
+function ContractEditor({
+  contract,
+  customers,
+  statuses,
+  onSaved,
+}: {
+  contract: Contract;
+  customers: Customer[];
+  statuses: Status[];
+  onSaved: () => void;
+}) {
+  const [customerId, setCustomerId] = useState(String(contract.customer.id));
+  const [statusId, setStatusId] = useState(String(contract.status.id));
+  const [number, setNumber] = useState(contract.number);
+  const [startsAt, setStartsAt] = useState(contract.startsAt.slice(0, 10));
+  const [endsAt, setEndsAt] = useState(contract.endsAt.slice(0, 10));
+  const documentKey = `org:work:contract-documents:${contract.id}`;
+  const documents = useQuery(documentKey, () => api.get<ContractDocument[]>(`/org/contracts/${contract.id}/documents`));
+  const update = useAction(() => api.patch(`/org/contracts/${contract.id}`, {
+    customerId: Number(customerId),
+    statusId: Number(statusId),
+    number: number.trim(),
+    startsAt,
+    endsAt,
+  }), { onSuccess: onSaved });
+  const upload = useAction((file: File) => api.upload<ContractDocument>(`/org/contracts/${contract.id}/documents`, file), {
+    onSuccess: () => invalidate(documentKey),
+  });
+  const remove = useAction((id: number) => api.delete(`/org/contracts/${contract.id}/documents/${id}`), {
+    onSuccess: () => invalidate(documentKey),
+  });
+  const download = useAction((document: ContractDocument) => api.blob(`/org/contracts/${contract.id}/documents/${document.id}`).then((blob) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = window.document.createElement('a');
+    link.href = url;
+    link.download = document.name;
+    link.click();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+  }));
+  const editableStatuses = statuses.filter((status) => status.isActive || status.id === contract.status.id);
+  const editableCustomers = customers.some((customer) => customer.id === contract.customer.id)
+    ? customers
+    : [contract.customer, ...customers];
+
+  return <section className="panel" style={{ padding: 14, marginTop: 12 }}>
+    <h3 className="section-title">Карточка договора</h3>
+    <form className="row wrap" style={{ alignItems: 'flex-end' }} onSubmit={(event) => { event.preventDefault(); update.run(); }}>
+      <SelectField label="Заказчик" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+        {editableCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{!customer.isActive ? ' (архив)' : ''}</option>)}
+      </SelectField>
+      <TextField label="Номер договора" value={number} onChange={(event) => setNumber(event.target.value)} />
+      <TextField label="Действует с" type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+      <TextField label="Действует по" type="date" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} />
+      <SelectField label="Статус договора" value={statusId} onChange={(event) => setStatusId(event.target.value)}>
+        {editableStatuses.map((status) => <option key={status.id} value={status.id}>{status.name}{!status.isActive ? ' (архив)' : ''}</option>)}
+      </SelectField>
+      <button className="btn btn-primary" disabled={update.pending || !number.trim() || !customerId || !statusId || !startsAt || endsAt < startsAt}>Сохранить договор</button>
+    </form>
+    <ActionError error={update.error} />
+    <h4>Документы договора</h4>
+    {documents.error && <Alert>{documents.error}</Alert>}
+    <label className="btn">
+      Загрузить документ (JPG, PNG, WebP или PDF, до 5 МБ)
+      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden onChange={(event) => {
+        const file = event.currentTarget.files?.[0];
+        if (file) upload.run(file);
+        event.currentTarget.value = '';
+      }} />
+    </label>
+    <ActionError error={upload.error} />
+    {documents.data?.length
+      ? <ul>{documents.data.map((document) => <li key={document.id}>
+        {document.name} · <button type="button" className="btn btn-sm" disabled={download.pending} onClick={() => download.run(document)}>Скачать</button>
+        <button type="button" className="btn btn-sm" disabled={remove.pending} onClick={() => remove.run(document.id)}>Удалить</button>
+      </li>)}</ul>
+      : <p className="muted small">Документы пока не загружены.</p>}
+    <ActionError error={download.error} />
+    <ActionError error={remove.error} />
+  </section>;
 }
 
 function AddendumCreator({
