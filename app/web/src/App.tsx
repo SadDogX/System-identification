@@ -29,7 +29,6 @@ import { BaseCatalogPage } from './modules/organization/BaseCatalogPage.tsx';
 import { ReferenceDataPage } from './modules/organization/ReferenceDataPage.tsx';
 import { SettingsPage } from './modules/settings/SettingsPage.tsx';
 import { PersonnelPage } from './modules/organization/PersonnelPage.tsx';
-import { WorkAssignmentsPage } from './modules/organization/WorkAssignmentsPage.tsx';
 import { CustomerSiteWorksPage } from './modules/organization/CustomerSiteWorksPage.tsx';
 import { PlannedWorkSchedulePage } from './modules/organization/PlannedWorkSchedulePage.tsx';
 

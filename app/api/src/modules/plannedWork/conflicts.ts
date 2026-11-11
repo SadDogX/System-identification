@@ -2,8 +2,9 @@ import { addDays } from '@app/shared';
 
 export interface ConflictWork {
   id: number;
-  mineId: number;
-  clusterNumber: string;
+  mineId: number | null;
+  clusterNumber: string | null;
+  locationKey?: string;
   startsAt: string;
   endsAt: string;
 }
@@ -23,7 +24,9 @@ export function conflictDatesForYear(works: ConflictWork[], year: number): Map<n
     for (let j = i + 1; j < works.length; j += 1) {
       const left = works[i];
       const right = works[j];
-      if (left.mineId === right.mineId && left.clusterNumber === right.clusterNumber) continue;
+      if (left.locationKey && right.locationKey
+        ? left.locationKey === right.locationKey
+        : left.mineId === right.mineId && left.clusterNumber === right.clusterNumber) continue;
       const overlapStart = left.startsAt > right.startsAt ? left.startsAt : right.startsAt;
       const overlapEnd = left.endsAt < right.endsAt ? left.endsAt : right.endsAt;
       const start = overlapStart < firstDay ? firstDay : overlapStart;

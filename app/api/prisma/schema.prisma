@@ -46,9 +46,9 @@ model User {
   createdMineCoordinatorAssignments MineCoordinatorAssignment[] @relation("MineCoordinatorAssignmentCreator")
   createdWells                      Well[]                      @relation("WellCreator")
   createdContracts                  Contract[]                  @relation("ContractCreator")
+  createdContractDocuments          ContractDocument[]          @relation("ContractDocumentCreator")
   createdAddenda                    ContractAddendum[]          @relation("AddendumCreator")
   createdWork                       WorkExecution[]             @relation("WorkCreator")
-  createdWorkAssignments            WorkAssignment[]            @relation("WorkAssignmentCreator")
   createdCustomerSiteWorks          CustomerSiteWork[]          @relation("CustomerSiteWorkCreator")
   createdPlannedWorks               PlannedWork[]                @relation("PlannedWorkCreator")
 
@@ -84,7 +84,6 @@ model Employee {
   supervised                  EmployeeAssignment[]        @relation("AssignmentSupervisor")
   mineAssignments             MineCoordinatorAssignment[]
   responsibleFor              WorkExecutionResponsible[]
-  plannedWork                 WorkAssignmentResponsible[]
   changes                     OrganizationChange[]
   supervisedCustomerSiteWorks CustomerSiteWork[]          @relation("CustomerSiteWorkSupervisor")
   coordinatedPlannedWorks     PlannedWork[]               @relation("PlannedWorkCoordinator")
@@ -106,7 +105,6 @@ model Base {
   assignments     EmployeeAssignment[]
   mines           Mine[]
   contracts       Contract[]
-  workAssignments WorkAssignment[]
   plannedWorks    PlannedWork[]
 
   @@index([isActive, name])
@@ -224,7 +222,6 @@ model Mine {
   createdBy              User?                       @relation("MineCreator", fields: [createdById], references: [id], onDelete: SetNull)
   coordinatorAssignments MineCoordinatorAssignment[]
   wells                  Well[]
-  workAssignments        WorkAssignment[]
   customerSiteWorks      CustomerSiteWork[]
   plannedWorks           PlannedWork[]
 
@@ -266,7 +263,6 @@ model Well {
   createdBy         User?               @relation("WellCreator", fields: [createdById], references: [id], onDelete: SetNull)
   contractBases     WellContractBasis[]
   executions        WorkExecution[]
-  workAssignments   WorkAssignment[]
   customerSiteWorks CustomerSiteWork[]
   plannedWorks      PlannedWork[]
 
@@ -284,6 +280,7 @@ model Customer {
   updatedAt         DateTime           @updatedAt
   contracts         Contract[]
   customerSiteWorks CustomerSiteWork[]
+  radarCards        RadarCard[]
 
   @@index([name, isActive])
 }
@@ -319,11 +316,26 @@ model Contract {
   wellBases   WellContractBasis[]
   permissions ContractWorkPermission[]
   executions  WorkExecution[]
+  documents   ContractDocument[]
 
   @@unique([baseId, number])
   @@index([customerId, statusId])
   @@index([baseId, startsAt, endsAt])
   @@index([statusId, startsAt, endsAt])
+}
+
+model ContractDocument {
+  id          Int      @id @default(autoincrement())
+  contractId  Int
+  name        String   @db.VarChar(255)
+  storedFile  String   @unique @db.VarChar(255)
+  mime        String   @db.VarChar(50)
+  createdById Int?
+  createdAt   DateTime @default(now())
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  createdBy   User?    @relation("ContractDocumentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([contractId, createdAt])
 }
 
 model AddendumStatus {
@@ -406,7 +418,7 @@ model WorkType {
   contractPermissions        ContractWorkPermission[]
   addendumPermissions        AddendumWorkPermission[]
   executions                 WorkExecution[]
-  workAssignments            WorkAssignment[]
+  plannedWorks               PlannedWork[]
 }
 
 model ContractWorkPermission {
@@ -432,7 +444,7 @@ model WorkStatus {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   executions         WorkExecution[]
-  plannedAssignments WorkAssignment[]
+  plannedWorks       PlannedWork[]
 }
 
 model WorkExecution {
@@ -453,6 +465,8 @@ model WorkExecution {
   addendum    ContractAddendum?          @relation(fields: [addendumId], references: [id], onDelete: Restrict)
   status      WorkStatus                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
   createdBy   User?                      @relation("WorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  customerSiteWorkId Int?
+  customerSiteWork CustomerSiteWork?     @relation(fields: [customerSiteWorkId], references: [id], onDelete: SetNull)
   responsible WorkExecutionResponsible[]
 
   @@index([wellId, performedAt])
@@ -460,6 +474,7 @@ model WorkExecution {
   @@index([addendumId, performedAt])
   @@index([workTypeId, performedAt])
   @@index([statusId, performedAt])
+  @@index([customerSiteWorkId, performedAt])
 }
 
 model WorkExecutionResponsible {
@@ -479,64 +494,29 @@ enum WorkLocationType {
   WELL
 }
 
-model WorkAssignment {
-  id            Int                         @id @default(autoincrement())
-  baseId        Int
-  mineId        Int?
-  wellId        Int?
-  locationType  WorkLocationType
-  clusterNumber String?                     @db.VarChar(50)
-  workTypeId    Int
-  statusId      Int
-  startsAt      DateTime                    @db.Date
-  endsAt        DateTime                    @db.Date
-  description   String?                     @db.Text
-  createdById   Int?
-  createdAt     DateTime                    @default(now())
-  updatedAt     DateTime                    @updatedAt
-  base          Base                        @relation(fields: [baseId], references: [id], onDelete: Restrict)
-  mine          Mine?                       @relation(fields: [mineId], references: [id], onDelete: Restrict)
-  well          Well?                       @relation(fields: [wellId], references: [id], onDelete: Restrict)
-  workType      WorkType                    @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
-  status        WorkStatus                  @relation(fields: [statusId], references: [id], onDelete: Restrict)
-  createdBy     User?                       @relation("WorkAssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  responsible   WorkAssignmentResponsible[]
-
-  @@index([baseId, startsAt, endsAt])
-  @@index([mineId, startsAt, endsAt])
-  @@index([wellId, startsAt, endsAt])
-  @@index([workTypeId, startsAt])
-  @@index([statusId, startsAt])
-}
-
-model WorkAssignmentResponsible {
-  id               Int            @id @default(autoincrement())
-  workAssignmentId Int
-  employeeId       Int
-  workAssignment   WorkAssignment @relation(fields: [workAssignmentId], references: [id], onDelete: Restrict)
-  employee         Employee       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-
-  @@unique([workAssignmentId, employeeId])
-  @@index([employeeId, workAssignmentId])
-}
-
 model PlannedWork {
   id                   Int                   @id @default(autoincrement())
   baseId               Int
-  mineId               Int
-  clusterNumber        String                @db.VarChar(50)
+  mineId               Int?
+  locationType         WorkLocationType      @default(WELL)
+  clusterNumber        String?               @db.VarChar(50)
   wellId               Int?
+  workTypeId           Int?
+  statusId             Int
   name                 String                @db.VarChar(200)
   startsAt             DateTime              @db.Date
   endsAt               DateTime              @db.Date
+  description          String?               @db.Text
   coordinatorEmployeeId Int
   supervisorEmployeeId Int
   createdById          Int?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   base                 Base                  @relation(fields: [baseId], references: [id], onDelete: Restrict)
-  mine                 Mine                  @relation(fields: [mineId], references: [id], onDelete: Restrict)
+  mine                 Mine?                 @relation(fields: [mineId], references: [id], onDelete: Restrict)
   well                 Well?                 @relation(fields: [wellId], references: [id], onDelete: Restrict)
+  workType             WorkType?             @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+  status               WorkStatus            @relation(fields: [statusId], references: [id], onDelete: Restrict)
   coordinator          Employee              @relation("PlannedWorkCoordinator", fields: [coordinatorEmployeeId], references: [id], onDelete: Restrict)
   supervisor           Employee              @relation("PlannedWorkSupervisor", fields: [supervisorEmployeeId], references: [id], onDelete: Restrict)
   createdBy            User?                 @relation("PlannedWorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -546,6 +526,8 @@ model PlannedWork {
   @@index([baseId, clusterNumber, startsAt])
   @@index([mineId, startsAt, endsAt])
   @@index([wellId])
+  @@index([workTypeId, startsAt])
+  @@index([statusId, startsAt])
   @@index([coordinatorEmployeeId])
   @@index([supervisorEmployeeId])
 }
@@ -578,6 +560,7 @@ model CustomerSiteWork {
   well                 Well     @relation(fields: [wellId], references: [id], onDelete: Restrict)
   supervisor           Employee @relation("CustomerSiteWorkSupervisor", fields: [supervisorEmployeeId], references: [id], onDelete: Restrict)
   createdBy            User?    @relation("CustomerSiteWorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  executions           WorkExecution[]
 
   @@index([mineId, startsAt, expectedEndAt])
   @@index([wellId, startsAt, expectedEndAt])
@@ -626,6 +609,7 @@ model UserCredential {
 model RadarCard {
   id              Int      @id @default(autoincrement())
   userId          Int
+  customerId      Int?
   customerName    String   @db.VarChar(200)
   mainInfo        String   @db.Text
   event           String   @db.Text
@@ -636,9 +620,11 @@ model RadarCard {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id])
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([incidentDate])
   @@index([userId, incidentDate])
+  @@index([customerId])
 }
 
 model IfoProposal {
